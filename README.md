@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# eatwhat（AI 智能菜谱辅助）
 
-## Getting Started
+基于 `Next.js App Router` 的菜谱推荐应用，包含：
+- 食材输入与推荐菜品
+- 精确菜谱与缺失采购清单
+- 历史记录持久化（Supabase）
 
-First, run the development server:
+## 本地开发
+
+1. 安装依赖
+
+```bash
+npm install
+```
+
+2. 配置环境变量（复制 `.env.example` 为 `.env.local`）
+
+至少填写：
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+3. 启动开发服务（端口 3001）
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+浏览器访问：`http://localhost:3001`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Cloudflare Workers 部署（OpenNext）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 本地验证
 
-## Learn More
+```bash
+npm run cf:build
+npm run cf:preview
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 直接部署（CLI）
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx wrangler login
+npm run cf:deploy
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## GitHub 自动部署到 Cloudflare（推荐）
 
-## Deploy on Vercel
+目标：`push main` 自动上线生产；PR 自动生成预览环境。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Cloudflare Dashboard -> `Workers & Pages` -> `Create` -> `Workers` -> `Connect to Git`
+2. 连接 GitHub 仓库：`jackwude/eatwhat`
+3. 生产分支设置为：`main`
+4. 开启 PR Preview Deployments
+5. 构建命令设置：
+   - Install: `npm ci`
+   - Build: `npm run cf:build`
+   - Deploy: `npm run cf:deploy`
+6. 在 Cloudflare 项目 `Settings -> Variables and Secrets` 配置环境变量（Production + Preview 都配置）
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+建议配置：
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `OPENAI_RECOMMEND_MODEL`
+- `OPENAI_API_STYLE`
+- `OPENAI_IMAGE_MODEL`
+- `OPENAI_IMAGE_SIZE`
+- `IMAGE_API_KEY`
+- `IMAGE_BASE_URL`
+- `OPENAI_STT_MODEL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_HISTORY_TABLE`（默认 `HistoryEntry`）
+- `RECOMMEND_CACHE_TTL_SEC`
+- `NEXT_PUBLIC_ASR_GATEWAY_URL`（启用语音网关时）
+
+## 安全说明
+
+- 所有密钥只放 Cloudflare Secrets，不要提交到 git。
+- 你历史上暴露过密钥，建议上线前全部轮换。

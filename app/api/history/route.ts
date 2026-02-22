@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { createHistoryEntry, listHistoryEntries } from "@/lib/db/queries";
 import { z } from "zod";
@@ -6,6 +5,8 @@ import { z } from "zod";
 export const runtime = "nodejs";
 
 const postSchema = z.object({
+  kind: z.string().optional(),
+  requestHash: z.string().optional(),
   inputText: z.string().min(1),
   ownedIngredients: z.array(z.string()).default([]),
   dishName: z.string().optional(),
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const limit = Number(searchParams.get("limit") || "20");
-    const history = await listHistoryEntries(Number.isFinite(limit) ? limit : 20);
+    const kind = searchParams.get("kind") || undefined;
+    const history = await listHistoryEntries(Number.isFinite(limit) ? limit : 20, kind);
     return NextResponse.json({ history });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -31,11 +33,13 @@ export async function POST(req: Request) {
     const parsed = postSchema.parse(body);
 
     const created = await createHistoryEntry({
+      kind: parsed.kind,
+      requestHash: parsed.requestHash,
       inputText: parsed.inputText,
       ownedIngredients: parsed.ownedIngredients,
       dishName: parsed.dishName,
-      recommendations: parsed.recommendations as Prisma.InputJsonValue | undefined,
-      recipeDetail: parsed.recipeDetail as Prisma.InputJsonValue | undefined,
+      recommendations: parsed.recommendations,
+      recipeDetail: parsed.recipeDetail,
     });
 
     return NextResponse.json({ id: created.id });
