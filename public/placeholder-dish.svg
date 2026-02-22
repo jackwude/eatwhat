@@ -1,0 +1,7 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#FFF6E8"/>
+  <circle cx="600" cy="450" r="250" fill="#FFE2BA"/>
+  <circle cx="600" cy="450" r="190" fill="#FFC77D"/>
+  <circle cx="600" cy="450" r="130" fill="#F59E0B"/>
+  <text x="600" y="780" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="42" fill="#7C4A03">测试占位图（已关闭 AI 出图）</text>
+</svg>

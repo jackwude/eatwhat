@@ -1,65 +1,64 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { IngredientInput } from "@/components/input/ingredient-input";
+import { SpeechButton } from "@/components/input/speech-button";
+import { Button } from "@/components/ui/button";
+
+function parseIngredients(input: string): string[] {
+  return input
+    .split(/[，,、\n\s]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const [inputText, setInputText] = useState("");
+  const [speechError, setSpeechError] = useState("");
+
+  const ownedIngredients = useMemo(() => parseIngredients(inputText), [inputText]);
+
+  function handleSubmit() {
+    if (!inputText.trim()) return;
+    const params = new URLSearchParams({
+      q: inputText,
+      owned: ownedIngredients.join(","),
+    });
+    router.push(`/recommend?${params.toString()}`);
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-8 sm:px-6">
+      <section className="glass-card rounded-3xl p-6 sm:p-8">
+        <p className="mb-2 text-sm font-semibold tracking-[0.08em] text-amber-700">AI 智能菜谱辅助</p>
+        <h1 className="text-3xl font-bold sm:text-4xl">今天吃什么，按现有食材直接算</h1>
+        <p className="mt-3 text-sm leading-6 text-[color:var(--muted)] sm:text-base">
+          输入食材或点击麦克风说一句，例如“我现在有西红柿和鸡蛋”，系统会生成 3 个推荐菜。
+        </p>
+
+        <div className="mt-6 space-y-3">
+          <IngredientInput value={inputText} onChange={setInputText} />
+          <div className="flex items-center gap-3">
+            <SpeechButton
+              onTranscript={(text) => {
+                setInputText((prev) => `${prev} ${text}`.trim());
+                setSpeechError("");
+              }}
+              onError={(message) => setSpeechError(message)}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <Button onClick={handleSubmit} disabled={!ownedIngredients.length}>
+              智能推荐
+            </Button>
+          </div>
+          {speechError ? <p className="text-sm text-red-700">{speechError}</p> : null}
         </div>
-      </main>
-    </div>
+
+        <div className="mt-6 text-sm text-[color:var(--muted)]">
+          <p>识别到食材：{ownedIngredients.length ? ownedIngredients.join("、") : "尚未输入"}</p>
+        </div>
+      </section>
+    </main>
   );
 }

@@ -1,26 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #fff9ef;
+  --surface: #fffdf8;
+  --ink: #221400;
+  --muted: #5f4b32;
+  --accent: #d97706;
+  --accent-2: #fb923c;
+  --warn: #b91c1c;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--font-noto-sans-sc), "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at 5% 5%, #ffe8bf 0%, transparent 32%),
+    radial-gradient(circle at 90% 10%, #ffd7a8 0%, transparent 28%),
+    linear-gradient(180deg, #fff5e4 0%, #fff9ef 35%, #fffdf8 100%);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-source-serif), "Songti SC", serif;
+}
+
+.glass-card {
+  background: color-mix(in srgb, var(--surface) 88%, white 12%);
+  border: 1px solid #f2d8b3;
+  box-shadow: 0 10px 30px rgb(34 20 0 / 8%);
+}
+
+.keypoint {
+  border-left: 4px solid var(--accent);
+  background: #fff1df;
 }

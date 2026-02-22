@@ -1,0 +1,26 @@
+import { z } from "zod";
+
+export const ingredientItemSchema = z.object({
+  name: z.string().min(1),
+  amount: z.string().min(1),
+});
+
+export const recommendationSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  reason: z.string().min(1),
+  requiredIngredients: z.array(ingredientItemSchema).min(1),
+  estimatedTimeMin: z.number().int().positive(),
+  difficulty: z.enum(["easy", "medium", "hard"]),
+});
+
+export const recommendResponseSchema = z.object({
+  recommendations: z.array(recommendationSchema).length(3),
+});
+
+export const recommendRequestSchema = z.object({
+  inputText: z.string().min(1),
+  ownedIngredients: z.array(z.string().min(1)).min(1),
+});
+
+export type RecommendResponse = z.infer<typeof recommendResponseSchema>;
