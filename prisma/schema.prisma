@@ -10,6 +10,8 @@ datasource db {
 
 model HistoryEntry {
   id               String   @id @default(cuid())
+  kind             String   @default("generic")
+  requestHash      String?
   inputText        String
   ownedIngredients Json
   dishName         String?
@@ -18,4 +20,5 @@ model HistoryEntry {
   createdAt        DateTime @default(now())
 
   @@index([createdAt])
+  @@index([kind, requestHash])
 }

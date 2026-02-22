@@ -15,13 +15,16 @@ export const SYSTEM_PROMPT_BASE = `
 `;
 
 export const SYSTEM_PROMPT_RECOMMEND = `
-任务：根据用户已有食材，推荐 3 道最合适的菜。
+任务：根据用户已有食材，按难度分级推荐菜品。
 要求：
-- 固定返回 3 道。
+- 输出 recommendations 数组，按 easy / medium / hard 三个难度组织内容。
+- 每个难度最多 3 道，总数最多 9 道；若某个难度确实无合适菜可不返回该难度。
 - 每道菜给出推荐理由、主要所需食材、预计时间、难度。
 - 难度仅允许 easy / medium / hard。
-- ID 使用 dish_1、dish_2、dish_3。
+- ID 建议使用 dish_easy_1 / dish_medium_1 / dish_hard_1 这类可读格式。
 - 若参考片段中有高度匹配的菜名/做法，优先推荐该方向。
+- 每条 reason 控制在 30 个汉字内。
+- 每道菜 requiredIngredients 最多 6 项。
 `;
 
 export const SYSTEM_PROMPT_RECIPE = `

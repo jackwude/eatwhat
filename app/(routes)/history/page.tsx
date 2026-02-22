@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { ErrorState } from "@/components/common/error-state";
 import { Loading } from "@/components/common/loading";
+import { formatBeijingTime } from "@/lib/utils/time";
 
 type HistoryEntry = {
   id: string;
@@ -49,7 +50,7 @@ export default function HistoryPage() {
         <ul className="space-y-3">
           {query.data.map((item) => (
             <li key={item.id} className="glass-card rounded-xl p-4">
-              <p className="text-xs text-[color:var(--muted)]">{new Date(item.createdAt).toLocaleString()}</p>
+              <p className="text-xs text-[color:var(--muted)]">{formatBeijingTime(item.createdAt)} (北京时间)</p>
               <p className="mt-1 font-medium">{item.dishName || item.inputText}</p>
             </li>
           ))}

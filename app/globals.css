@@ -1,13 +1,15 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/royal.css";
 
 :root {
-  --bg: #fff9ef;
-  --surface: #fffdf8;
-  --ink: #221400;
-  --muted: #5f4b32;
-  --accent: #d97706;
-  --accent-2: #fb923c;
-  --warn: #b91c1c;
+  --bg: var(--royal-bg);
+  --surface: var(--royal-surface);
+  --ink: var(--royal-ink);
+  --muted: #5f4c34;
+  --accent: var(--royal-gold);
+  --accent-2: #d3a040;
+  --warn: #9f2a1f;
 }
 
 * {
@@ -19,10 +21,6 @@ body {
   min-height: 100vh;
   color: var(--ink);
   font-family: var(--font-noto-sans-sc), "PingFang SC", "Microsoft YaHei", sans-serif;
-  background:
-    radial-gradient(circle at 5% 5%, #ffe8bf 0%, transparent 32%),
-    radial-gradient(circle at 90% 10%, #ffd7a8 0%, transparent 28%),
-    linear-gradient(180deg, #fff5e4 0%, #fff9ef 35%, #fffdf8 100%);
 }
 
 h1,
@@ -34,8 +32,8 @@ h4 {
 
 .glass-card {
   background: color-mix(in srgb, var(--surface) 88%, white 12%);
-  border: 1px solid #f2d8b3;
-  box-shadow: 0 10px 30px rgb(34 20 0 / 8%);
+  border: 1px solid rgb(201 165 90 / 56%);
+  box-shadow: 0 14px 34px var(--royal-shadow);
 }
 
 .keypoint {

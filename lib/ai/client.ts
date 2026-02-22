@@ -15,20 +15,119 @@ function getClient(): OpenAI {
   return client;
 }
 
-function extractJsonString(raw: string): string {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("LLM did not return JSON object text");
+function collectTextRecursively(value: unknown, bucket: string[]) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text) bucket.push(text);
+    return;
   }
-  return raw.slice(start, end + 1);
+
+  if (!value || typeof value !== "object") return;
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectTextRecursively(item, bucket));
+    return;
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    if (key === "output_text" || key === "text" || key === "content") {
+      collectTextRecursively(item, bucket);
+      continue;
+    }
+    if (typeof item === "object") {
+      collectTextRecursively(item, bucket);
+    }
+  }
 }
 
-async function callByResponsesAPI(system: string, user: string): Promise<string> {
-  const env = getEnv();
+function extractBalancedJsonObjects(input: string): string[] {
+  const result: string[] = [];
 
-  const response = await getClient().responses.create({
-    model: env.OPENAI_MODEL,
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] !== "{") continue;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let j = i; j < input.length; j += 1) {
+      const ch = input[j];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === "\\") {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === "{") depth += 1;
+      if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          result.push(input.slice(i, j + 1));
+          i = j;
+          break;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function getExpectedTopLevelKeys(template: string): string[] {
+  try {
+    const obj = JSON.parse(template);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
+    return Object.keys(obj);
+  } catch {
+    return [];
+  }
+}
+
+function tryParsePayloadToJsonObject(payload: unknown, expectedKeys: string[]): unknown {
+  const textCandidates: string[] = [];
+
+  if (typeof payload === "string") {
+    textCandidates.push(payload);
+  } else if (payload && typeof payload === "object") {
+    textCandidates.push(JSON.stringify(payload));
+    collectTextRecursively(payload, textCandidates);
+  }
+
+  const snippets = textCandidates.flatMap((text) => {
+    const trimmed = text.trim();
+    return [trimmed, ...extractBalancedJsonObjects(trimmed)];
+  });
+
+  for (const snippet of snippets) {
+    try {
+      const parsed = JSON.parse(snippet);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+
+      if (!expectedKeys.length) return parsed;
+      const hasExpectedKey = expectedKeys.some((key) => key in (parsed as Record<string, unknown>));
+      if (hasExpectedKey) return parsed;
+    } catch {
+      // ignore invalid snippet
+    }
+  }
+
+  throw new Error("Unable to parse target JSON object from model response");
+}
+
+async function callByResponsesAPI(system: string, user: string, model: string): Promise<unknown> {
+  return getClient().responses.create({
+    model,
     input: [
       {
         role: "system",
@@ -40,28 +139,20 @@ async function callByResponsesAPI(system: string, user: string): Promise<string>
       },
     ],
     temperature: 0.4,
+    max_output_tokens: 900,
   });
-
-  const outputText = (response as unknown as { output_text?: string }).output_text;
-  if (outputText && outputText.trim()) {
-    return outputText;
-  }
-
-  const serialized = JSON.stringify(response);
-  return serialized;
 }
 
-async function callByChatAPI(system: string, user: string): Promise<string> {
-  const env = getEnv();
-
+async function callByChatAPI(system: string, user: string, model: string): Promise<string> {
   const completion = await getClient().chat.completions.create({
-    model: env.OPENAI_MODEL,
+    model,
     temperature: 0.4,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
+    max_tokens: 900,
   });
 
   const content = completion.choices[0]?.message?.content;
@@ -77,20 +168,22 @@ export async function callJsonModel<T>(args: {
   user: string;
   responseTemplate: string;
   retries?: number;
+  model?: string;
 }): Promise<T> {
   const env = getEnv();
   const retries = args.retries ?? 1;
   const systemPrompt = `${args.system}\n\n必须输出严格 JSON 对象，不要 markdown。\nJSON模板：\n${args.responseTemplate}`;
+  const expectedKeys = getExpectedTopLevelKeys(args.responseTemplate);
+  const model = args.model || env.OPENAI_MODEL;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const raw =
+      const payload =
         env.OPENAI_API_STYLE === "responses"
-          ? await callByResponsesAPI(systemPrompt, args.user)
-          : await callByChatAPI(systemPrompt, args.user);
+          ? await callByResponsesAPI(systemPrompt, args.user, model)
+          : await callByChatAPI(systemPrompt, args.user, model);
 
-      const jsonText = extractJsonString(raw);
-      return JSON.parse(jsonText) as T;
+      return tryParsePayloadToJsonObject(payload, expectedKeys) as T;
     } catch (error) {
       if (attempt === retries) {
         throw new Error(`LLM JSON parse failed: ${(error as Error).message}`);

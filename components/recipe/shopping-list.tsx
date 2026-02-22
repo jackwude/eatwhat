@@ -14,16 +14,16 @@ export function ShoppingList({ required, missing }: { required: Ingredient[]; mi
         </ul>
       </article>
 
-      <article className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-red-800">缺失采购清单</h2>
+      <article className="rounded-2xl border border-[#b4685d] bg-[linear-gradient(180deg,#fff0ec,#ffe8e1)] p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-[#7f2319]">缺失采购清单</h2>
         {missing.length ? (
-          <ul className="mt-3 space-y-1 text-sm text-red-900">
+          <ul className="mt-3 space-y-1 text-sm text-[#7d2418]">
             {missing.map((item) => (
               <li key={`missing-${item.name}`}>• {item.name} · {item.amount}</li>
             ))}
           </ul>
         ) : (
-          <p className="mt-3 text-sm text-red-900">现有食材已齐全，可直接开做。</p>
+          <p className="mt-3 text-sm text-[#7d2418]">现有食材已齐全，可直接开做。</p>
         )}
       </article>
     </div>

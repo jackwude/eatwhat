@@ -75,7 +75,7 @@ function extractIngredients(md: string): string[] {
     .filter((line) => line.startsWith("*"))
     .map((line) => line.replace(/^\*\s*/, "").split(/[（(]/)[0].trim())
     .filter(Boolean)
-    .slice(0, 12);
+    .slice(0, 10);
 }
 
 function extractOperations(md: string): string[] {
@@ -86,7 +86,7 @@ function extractOperations(md: string): string[] {
     .filter((line) => line.startsWith("*"))
     .map((line) => line.replace(/^\*\s*/, "").trim())
     .filter(Boolean)
-    .slice(0, 6);
+    .slice(0, 4);
 }
 
 async function listMarkdownFiles(root: string): Promise<string[]> {
@@ -141,7 +141,7 @@ async function getHowToCookDocs(): Promise<HowToCookDoc[]> {
 function scoreDoc(doc: HowToCookDoc, queryTokens: Set<string>, dishName?: string): number {
   const titleNorm = normalizeText(doc.title);
   const ingredientNorm = normalizeText(doc.ingredients.join(" "));
-  const contentNorm = normalizeText(doc.content.slice(0, 2000));
+  const contentNorm = normalizeText(doc.content.slice(0, 1200));
 
   let score = 0;
 
@@ -151,8 +151,7 @@ function scoreDoc(doc: HowToCookDoc, queryTokens: Set<string>, dishName?: string
   }
 
   for (const token of queryTokens) {
-    if (!token) continue;
-    if (token.length <= 1) continue;
+    if (!token || token.length <= 1) continue;
     if (titleNorm.includes(token)) score += 8;
     if (ingredientNorm.includes(token)) score += 5;
     if (contentNorm.includes(token)) score += 1;
@@ -161,18 +160,23 @@ function scoreDoc(doc: HowToCookDoc, queryTokens: Set<string>, dishName?: string
   return score;
 }
 
+function shortText(input: string, maxLength: number): string {
+  if (input.length <= maxLength) return input;
+  return `${input.slice(0, maxLength)}...`;
+}
+
 function buildExcerpt(doc: HowToCookDoc): string {
   const parts: string[] = [];
   if (doc.ingredients.length) {
-    parts.push(`必备原料: ${doc.ingredients.slice(0, 8).join("、")}`);
+    parts.push(`必备原料: ${doc.ingredients.slice(0, 6).join("、")}`);
   }
   if (doc.operations.length) {
-    parts.push(`关键操作: ${doc.operations.slice(0, 4).join("；")}`);
+    parts.push(`关键操作: ${doc.operations.slice(0, 3).join("；")}`);
   }
   if (!parts.length) {
-    parts.push(doc.content.slice(0, 180));
+    parts.push(shortText(doc.content, 140));
   }
-  return parts.join("\n");
+  return shortText(parts.join("\n"), 180);
 }
 
 export async function retrieveHowToCookReferences(args: {
@@ -186,11 +190,12 @@ export async function retrieveHowToCookReferences(args: {
 
   const query = [args.dishName, args.inputText, ...(args.ownedIngredients || [])].filter(Boolean).join(" ");
   const tokens = new Set(tokenize(query));
+  const minScore = args.dishName ? 1 : 3;
   const scored = docs
     .map((doc) => ({ doc, score: scoreDoc(doc, tokens, args.dishName) }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score)
-    .slice(0, args.limit ?? 5)
+    .slice(0, args.limit ?? 3)
     .map((item) => ({
       title: item.doc.title,
       path: item.doc.relativePath,
@@ -207,8 +212,6 @@ export function buildHowToCookContext(refs: HowToCookReference[]): string {
   }
 
   return refs
-    .map((ref, idx) => {
-      return `参考${idx + 1}: ${ref.title}\n来源: ${ref.path}\n${ref.excerpt}`;
-    })
+    .map((ref, idx) => `参考${idx + 1}: ${ref.title}\n来源: ${ref.path}\n${ref.excerpt}`)
     .join("\n\n");
 }
