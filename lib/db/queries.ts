@@ -13,6 +13,10 @@ type HistoryCreateInput = {
 
 const HISTORY_TABLE_NAME = "HistoryEntry" as const;
 
+function createHistoryId() {
+  return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function assertTableConfig() {
   const table = getEnv().SUPABASE_HISTORY_TABLE;
   if (table !== HISTORY_TABLE_NAME) {
@@ -26,6 +30,7 @@ export async function createHistoryEntry(input: HistoryCreateInput) {
   const { data, error } = await supabase
     .from(HISTORY_TABLE_NAME)
     .insert({
+      id: createHistoryId(),
       kind: input.kind ?? "generic",
       requestHash: input.requestHash ?? null,
       inputText: input.inputText,
