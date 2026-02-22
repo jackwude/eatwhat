@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
+import { generateDishImage } from "@/lib/ai/image";
+import { imageRequestSchema } from "@/lib/schemas/image.schema";
 
 export const runtime = "nodejs";
 
-// 测试期间关闭真实出图，统一返回固定占位图，避免消耗图片模型额度。
-export async function POST() {
-  return NextResponse.json({ imageUrl: "/placeholder-dish.svg", disabled: true });
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const parsed = imageRequestSchema.parse(body);
+    const imageUrl = await generateDishImage(parsed.dishName, parsed.style);
+    return NextResponse.json({ imageUrl });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }

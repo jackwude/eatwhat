@@ -39,10 +39,15 @@ export function RecipePageClient() {
   const searchParams = useSearchParams();
 
   const dishName = searchParams.get("dishName") || "未命名菜品";
+  const q = searchParams.get("q") || "";
   const owned = (searchParams.get("owned") || "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  const recommendBackHref = `/recommend?${new URLSearchParams({
+    q: q || `我有${owned.join("、")}`,
+    owned: owned.join(","),
+  }).toString()}`;
 
   const recipeQuery = useQuery({
     queryKey: ["recipe", params.id, dishName, owned.join("|")],
@@ -51,16 +56,40 @@ export function RecipePageClient() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const imageQuery = useQuery({
+    queryKey: ["dish-image", dishName],
+    queryFn: async () => {
+      const res = await fetch("/api/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dishName,
+          style: "中式家常菜高清美食摄影",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "图片生成失败");
+      }
+      return data.imageUrl as string;
+    },
+    enabled: Boolean(recipeQuery.data && dishName),
+    retry: 0,
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const imageUrl = imageQuery.data || PLACEHOLDER_IMAGE_URL;
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-4xl px-4 py-8 sm:px-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold sm:text-3xl">{dishName}</h1>
-        <Link className="text-sm font-medium text-amber-700 hover:underline" href="/recommend">
+        <Link className="text-sm font-medium text-amber-700 hover:underline" href={recommendBackHref}>
           返回推荐
         </Link>
       </div>
 
-      {recipeQuery.isLoading ? <Loading label="正在生成精确菜谱..." /> : null}
+      {recipeQuery.isLoading ? <Loading label="正在生成精确菜谱..." showProgress /> : null}
       {recipeQuery.isError ? (
         <ErrorState
           title="菜谱生成失败"
@@ -73,10 +102,17 @@ export function RecipePageClient() {
       {recipeQuery.data ? (
         <section className="space-y-6">
           <article className="glass-card overflow-hidden rounded-2xl">
-            <div className="relative aspect-[4/3] w-full bg-amber-50">
-              <Image fill src={PLACEHOLDER_IMAGE_URL} alt={`${dishName} 占位图`} className="object-cover" unoptimized />
+            <div className="relative h-44 w-full bg-amber-50 sm:h-56">
+              <Image fill src={imageUrl} alt={`${dishName} 预览图`} className="object-cover" unoptimized />
             </div>
-            <p className="border-t border-amber-100 px-4 py-2 text-xs text-[color:var(--muted)]">测试模式：已关闭 AI 图片生成，使用固定占位图。</p>
+            <p className="border-t border-amber-100 px-4 py-2 text-xs text-[color:var(--muted)]">
+              {imageQuery.isLoading ? "正在生成菜品预览图..." : imageQuery.isError ? "预览图生成失败，已使用占位图。" : "AI 生成菜品预览图"}
+            </p>
+          </article>
+
+          <article className="glass-card rounded-2xl px-4 py-3 text-xs text-[color:var(--muted)] sm:text-sm">
+            备菜 {recipeQuery.data.timing.prepMin} 分钟 | 烹饪 {recipeQuery.data.timing.cookMin} 分钟 | 总计 {recipeQuery.data.timing.totalMin} 分钟
+            {recipeQuery.data.tips.length ? ` | 提示：${recipeQuery.data.tips[0]}` : ""}
           </article>
 
           <ShoppingList required={recipeQuery.data.requiredIngredients} missing={recipeQuery.data.missingIngredients} />
@@ -100,18 +136,6 @@ export function RecipePageClient() {
             ) : (
               <p className="mt-3 text-sm text-[color:var(--muted)]">未命中本地 HowToCook 菜谱，当前结果仅按通用规则生成。</p>
             )}
-          </article>
-
-          <article className="glass-card rounded-2xl p-5 sm:p-6">
-            <h2 className="text-xl font-semibold">时间与提示</h2>
-            <p className="mt-2 text-sm text-[color:var(--muted)]">
-              备菜 {recipeQuery.data.timing.prepMin} 分钟 | 烹饪 {recipeQuery.data.timing.cookMin} 分钟 | 总计 {recipeQuery.data.timing.totalMin} 分钟
-            </p>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6">
-              {recipeQuery.data.tips.map((tip) => (
-                <li key={tip}>{tip}</li>
-              ))}
-            </ul>
           </article>
         </section>
       ) : null}
