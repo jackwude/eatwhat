@@ -23,13 +23,45 @@ async function findHowToCookRoot(): Promise<string | null> {
   if (resolvedHowToCookRoot) return resolvedHowToCookRoot;
 
   const envRoot = process.env.HOWTOCOOK_DATA_ROOT?.trim();
-  const candidates = [
-    ...(envRoot ? [envRoot] : []),
-    path.join(process.cwd(), "data", "HowToCook"),
-    path.resolve("data", "HowToCook"),
-    path.join(process.cwd(), ".open-next", "server-functions", "default", "data", "HowToCook"),
-    path.resolve(".open-next", "server-functions", "default", "data", "HowToCook"),
-  ];
+  const candidateSet = new Set<string>();
+  if (envRoot) {
+    candidateSet.add(envRoot);
+  }
+
+  function pushBaseCandidates(baseDir: string) {
+    candidateSet.add(path.join(baseDir, "data", "HowToCook"));
+    candidateSet.add(path.join(baseDir, ".open-next", "server-functions", "default", "data", "HowToCook"));
+    candidateSet.add(path.join(baseDir, "server-functions", "default", "data", "HowToCook"));
+    candidateSet.add(path.join(baseDir, "default", "data", "HowToCook"));
+  }
+
+  const cwd = process.cwd();
+  pushBaseCandidates(cwd);
+  candidateSet.add(path.resolve("data", "HowToCook"));
+  candidateSet.add(path.resolve(".open-next", "server-functions", "default", "data", "HowToCook"));
+
+  const argvEntry = process.argv[1];
+  if (argvEntry) {
+    const argvDir = path.dirname(argvEntry);
+    pushBaseCandidates(argvDir);
+    pushBaseCandidates(path.resolve(argvDir, ".."));
+    pushBaseCandidates(path.resolve(argvDir, "../.."));
+    pushBaseCandidates(path.resolve(argvDir, "../../.."));
+  }
+
+  const ancestors: string[] = [];
+  let cursor = cwd;
+  for (let depth = 0; depth < 6; depth += 1) {
+    ancestors.push(cursor);
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  for (const dir of ancestors) {
+    pushBaseCandidates(dir);
+  }
+
+  const candidates = [...candidateSet];
 
   for (const candidate of candidates) {
     try {
