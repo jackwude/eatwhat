@@ -1,5 +1,4 @@
-import { promises as fs } from "fs";
-import path from "path";
+import indexData from "@/data/howtocook-index.json";
 
 type HowToCookDoc = {
   title: string;
@@ -9,75 +8,19 @@ type HowToCookDoc = {
   operations: string[];
 };
 
+type HowToCookIndex = {
+  generatedAt: string;
+  sourceRoot: string;
+  count: number;
+  docs: HowToCookDoc[];
+};
+
 export type HowToCookReference = {
   title: string;
   path: string;
   score: number;
   excerpt: string;
 };
-
-let docsCache: Promise<HowToCookDoc[]> | null = null;
-let resolvedHowToCookRoot: string | null = null;
-
-async function findHowToCookRoot(): Promise<string | null> {
-  if (resolvedHowToCookRoot) return resolvedHowToCookRoot;
-
-  const envRoot = process.env.HOWTOCOOK_DATA_ROOT?.trim();
-  const candidateSet = new Set<string>();
-  if (envRoot) {
-    candidateSet.add(envRoot);
-  }
-
-  function pushBaseCandidates(baseDir: string) {
-    candidateSet.add(path.join(baseDir, "data", "HowToCook"));
-    candidateSet.add(path.join(baseDir, ".open-next", "server-functions", "default", "data", "HowToCook"));
-    candidateSet.add(path.join(baseDir, "server-functions", "default", "data", "HowToCook"));
-    candidateSet.add(path.join(baseDir, "default", "data", "HowToCook"));
-  }
-
-  const cwd = process.cwd();
-  pushBaseCandidates(cwd);
-  candidateSet.add(path.resolve("data", "HowToCook"));
-  candidateSet.add(path.resolve(".open-next", "server-functions", "default", "data", "HowToCook"));
-
-  const argvEntry = process.argv[1];
-  if (argvEntry) {
-    const argvDir = path.dirname(argvEntry);
-    pushBaseCandidates(argvDir);
-    pushBaseCandidates(path.resolve(argvDir, ".."));
-    pushBaseCandidates(path.resolve(argvDir, "../.."));
-    pushBaseCandidates(path.resolve(argvDir, "../../.."));
-  }
-
-  const ancestors: string[] = [];
-  let cursor = cwd;
-  for (let depth = 0; depth < 6; depth += 1) {
-    ancestors.push(cursor);
-    const parent = path.dirname(cursor);
-    if (parent === cursor) break;
-    cursor = parent;
-  }
-  for (const dir of ancestors) {
-    pushBaseCandidates(dir);
-  }
-
-  const candidates = [...candidateSet];
-
-  for (const candidate of candidates) {
-    try {
-      await fs.access(path.join(candidate, "dishes"));
-      resolvedHowToCookRoot = candidate;
-      return candidate;
-    } catch {
-      // try next candidate
-    }
-  }
-
-  console.error(
-    `[howtocook] Unable to resolve HowToCook root. Checked: ${candidates.join(" | ")}`,
-  );
-  return null;
-}
 
 function normalizeText(input: string): string {
   return input
@@ -99,101 +42,6 @@ function tokenize(input: string): string[] {
       return grams;
     })
     .filter(Boolean);
-}
-
-function firstLineTitle(markdown: string, fallback: string): string {
-  const match = markdown.match(/^#\s+(.+)$/m);
-  if (!match) return fallback;
-  return match[1].replace(/的做法$/, "").trim();
-}
-
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/^#+\s*/gm, "")
-    .replace(/^>\s?/gm, "")
-    .replace(/[*_`~]/g, "")
-    .trim();
-}
-
-function extractSection(md: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`##\\s+${escaped}\\n([\\s\\S]*?)(?:\\n##\\s+|$)`, "m");
-  const match = md.match(re);
-  return match ? match[1].trim() : "";
-}
-
-function extractIngredients(md: string): string[] {
-  const sec = extractSection(md, "必备原料和工具");
-  return sec
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("*"))
-    .map((line) => line.replace(/^\*\s*/, "").split(/[（(]/)[0].trim())
-    .filter(Boolean)
-    .slice(0, 10);
-}
-
-function extractOperations(md: string): string[] {
-  const sec = extractSection(md, "操作");
-  return sec
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("*"))
-    .map((line) => line.replace(/^\*\s*/, "").trim())
-    .filter(Boolean)
-    .slice(0, 4);
-}
-
-async function listMarkdownFiles(root: string): Promise<string[]> {
-  const entries = await fs.readdir(root, { withFileTypes: true });
-  const files = await Promise.all(
-    entries.map(async (entry) => {
-      const full = path.join(root, entry.name);
-      if (entry.isDirectory()) return listMarkdownFiles(full);
-      if (entry.isFile() && entry.name.endsWith(".md")) return [full];
-      return [] as string[];
-    }),
-  );
-  return files.flat();
-}
-
-async function loadHowToCookDocsInternal(): Promise<HowToCookDoc[]> {
-  const root = await findHowToCookRoot();
-  if (!root) {
-    return [];
-  }
-  const dishesRoot = path.join(root, "dishes");
-
-  const files = await listMarkdownFiles(dishesRoot);
-  const docs = await Promise.all(
-    files.map(async (file) => {
-      const raw = await fs.readFile(file, "utf8");
-      const fallback = path.basename(file, ".md");
-      const title = firstLineTitle(raw, fallback);
-      const content = stripMarkdown(raw);
-      const relativePath = path.relative(root, file);
-
-      return {
-        title,
-        relativePath,
-        content,
-        ingredients: extractIngredients(raw),
-        operations: extractOperations(raw),
-      } satisfies HowToCookDoc;
-    }),
-  );
-
-  return docs;
-}
-
-async function getHowToCookDocs(): Promise<HowToCookDoc[]> {
-  if (!docsCache) {
-    docsCache = loadHowToCookDocsInternal();
-  }
-  return docsCache;
 }
 
 function scoreDoc(doc: HowToCookDoc, queryTokens: Set<string>, dishName?: string): number {
@@ -237,13 +85,19 @@ function buildExcerpt(doc: HowToCookDoc): string {
   return shortText(parts.join("\n"), 180);
 }
 
+function getHowToCookDocs(): HowToCookDoc[] {
+  const index = indexData as HowToCookIndex;
+  const docs = Array.isArray(index.docs) ? index.docs : [];
+  return docs;
+}
+
 export async function retrieveHowToCookReferences(args: {
   inputText?: string;
   ownedIngredients?: string[];
   dishName?: string;
   limit?: number;
 }): Promise<HowToCookReference[]> {
-  const docs = await getHowToCookDocs();
+  const docs = getHowToCookDocs();
   if (!docs.length) return [];
 
   const query = [args.dishName, args.inputText, ...(args.ownedIngredients || [])].filter(Boolean).join(" ");

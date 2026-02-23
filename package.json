@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:howtocook-index": "node scripts/build-howtocook-index.mjs",
+    "prebuild": "npm run prepare:howtocook-index",
     "dev": "next dev --webpack -p 3001",
     "build": "next build --webpack",
     "start": "next start -p 3001",
