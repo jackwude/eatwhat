@@ -28,3 +28,4 @@ export const recommendRequestSchema = z.object({
 
 export type RecommendResponse = z.infer<typeof recommendResponseSchema>;
 export type IngredientExtractSource = "llm" | "fallback_rule";
+export type IngredientExtractReason = "llm_success" | "breaker_open" | "llm_failed_fallback";
