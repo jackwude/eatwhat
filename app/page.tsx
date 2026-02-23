@@ -12,6 +12,7 @@ type HistoryItem = {
   id: string;
   inputText: string;
   ownedIngredients: unknown;
+  recommendations?: unknown;
   createdAt: string;
 };
 
@@ -25,6 +26,17 @@ function parseIngredients(input: string): string[] {
 function toOwnedIngredients(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item)).filter(Boolean);
+}
+
+function toRecommendationNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const maybe = item as { name?: unknown };
+      return typeof maybe.name === "string" ? maybe.name : "";
+    })
+    .filter(Boolean);
 }
 
 async function fetchRecommendHistory(): Promise<HistoryItem[]> {
@@ -112,6 +124,7 @@ export default function HomePage() {
           <ul className="stagger-list space-y-3">
             {historyQuery.data.map((item) => {
               const owned = toOwnedIngredients(item.ownedIngredients);
+              const dishNames = toRecommendationNames(item.recommendations);
               return (
                 <li key={item.id} className="rounded-2xl border border-[#e2c996] bg-[#fffaef] px-4 py-3 shadow-[0_8px_16px_rgba(53,27,7,0.08)]">
                   <p className="text-xs text-[color:var(--muted)]">
@@ -119,6 +132,9 @@ export default function HomePage() {
                   </p>
                   <p className="mt-2 text-sm font-medium">{item.inputText}</p>
                   <p className="mt-1 text-xs text-[color:var(--muted)]">食材：{owned.join("、") || "未记录"}</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted)]">
+                    上次推荐：{dishNames.length ? dishNames.slice(0, 3).join("、") : "暂无菜品快照"}
+                  </p>
                   <button
                     type="button"
                     className="royal-link mt-2 text-sm font-semibold"

@@ -54,7 +54,7 @@ export async function listHistoryEntries(limit = 20, kind?: string) {
   const supabase = getSupabaseServerClient();
   let query = supabase
     .from(HISTORY_TABLE_NAME)
-    .select("id, inputText, ownedIngredients, dishName, createdAt")
+    .select("id, inputText, ownedIngredients, dishName, recommendations, recipeDetail, createdAt")
     .order("createdAt", { ascending: false })
     .limit(limit);
 
@@ -68,7 +68,9 @@ export async function listHistoryEntries(limit = 20, kind?: string) {
     throw new Error(`History list failed: ${error.message}`);
   }
 
-  return (data ?? []) as Array<Pick<HistoryEntryRow, "id" | "inputText" | "ownedIngredients" | "dishName" | "createdAt">>;
+  return (data ?? []) as Array<
+    Pick<HistoryEntryRow, "id" | "inputText" | "ownedIngredients" | "dishName" | "recommendations" | "recipeDetail" | "createdAt">
+  >;
 }
 
 export async function findCachedRecommendationByHash(requestHash: string) {
