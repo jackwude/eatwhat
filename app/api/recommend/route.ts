@@ -54,6 +54,25 @@ function isRecommendationArray(value: unknown): value is RecommendWithSources["r
   return Array.isArray(value);
 }
 
+async function persistRecommendHistory(
+  inputText: string,
+  ownedIngredients: string[],
+  requestHash: string,
+  recommendations: RecommendWithSources["recommendations"],
+) {
+  try {
+    await createHistoryEntry({
+      kind: "recommend",
+      requestHash,
+      inputText,
+      ownedIngredients,
+      recommendations,
+    });
+  } catch (error) {
+    console.error("[recommend] history persist failed", error);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -64,6 +83,7 @@ export async function POST(req: Request) {
 
     const cached = readCache(key);
     if (cached) {
+      await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, cached.recommendations);
       return NextResponse.json({ ...cached, cacheHit: true, cacheSource: "memory" });
     }
 
@@ -83,19 +103,14 @@ export async function POST(req: Request) {
         referenceSources,
       };
       writeCache(key, value);
+      await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, value.recommendations);
       return NextResponse.json({ ...value, cacheHit: true, cacheSource: "database" });
     }
 
     const response = await generateRecommendations(parsed.inputText, ownedIngredients);
     writeCache(key, response);
 
-    await createHistoryEntry({
-      kind: "recommend",
-      requestHash,
-      inputText: parsed.inputText,
-      ownedIngredients,
-      recommendations: response.recommendations,
-    });
+    await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, response.recommendations);
 
     return NextResponse.json({ ...response, cacheHit: false, cacheSource: "llm" });
   } catch (error) {
