@@ -6,18 +6,9 @@ import { useSearchParams } from "next/navigation";
 import { ErrorState } from "@/components/common/error-state";
 import { Loading } from "@/components/common/loading";
 import { RecommendationCard } from "@/components/recipe/recommendation-card";
-import { RoyalDivider } from "@/components/ui/royal-divider";
 import type { IngredientExtractSource, RecommendResponse } from "@/lib/schemas/recommend.schema";
 
-type ReferenceSource = {
-  title: string;
-  path: string;
-  score: number;
-  excerpt: string;
-};
-
 type RecommendApiResponse = RecommendResponse & {
-  referenceSources?: ReferenceSource[];
   normalizedOwnedIngredients?: string[];
   ingredientExtractSource?: IngredientExtractSource;
 };
@@ -158,23 +149,6 @@ export function RecommendPageClient() {
               </div>
             </section>
           ) : null}
-
-          <section className="glass-card mt-6 rounded-2xl p-5">
-            <h2 className="text-lg font-semibold">御膳典籍引注</h2>
-            <RoyalDivider label="HOWTOCOOK" />
-            {query.data.referenceSources?.length ? (
-              <ul className="space-y-2 text-sm">
-                {query.data.referenceSources.map((ref) => (
-                  <li key={`${ref.path}-${ref.title}`} className="rounded-lg border border-[#e3cb9d] bg-[#fff8ea] px-3 py-2">
-                    <span className="font-semibold">{ref.title}</span>
-                    <span className="text-[color:var(--muted)]">（{ref.path}）</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-[color:var(--muted)]">未命中本地 HowToCook 菜谱，当前结果仅按通用规则生成。</p>
-            )}
-          </section>
         </>
       ) : null}
     </main>
