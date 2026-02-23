@@ -1,6 +1,6 @@
 import indexData from "@/data/howtocook-index.json";
 
-type HowToCookDoc = {
+export type HowToCookDoc = {
   title: string;
   relativePath: string;
   content: string;
@@ -133,6 +133,19 @@ export async function getHowToCookReferenceByPath(pathHint: string): Promise<How
 
   if (!matched) return null;
   return toReference(matched, 999);
+}
+
+export async function getHowToCookDocByPath(pathHint: string): Promise<HowToCookDoc | null> {
+  const docs = getHowToCookDocs();
+  const normalized = normalizeText(pathHint);
+  if (!normalized) return null;
+
+  const matched =
+    docs.find((doc) => normalizeText(doc.relativePath) === normalized) ||
+    docs.find((doc) => normalizeText(doc.relativePath).includes(normalized)) ||
+    docs.find((doc) => normalized.includes(normalizeText(doc.relativePath)));
+
+  return matched || null;
 }
 
 export function buildHowToCookContext(refs: HowToCookReference[]): string {

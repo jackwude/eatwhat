@@ -3,8 +3,10 @@ import { buildRecipeUserPrompt, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_RECIPE } from 
 import { computeMissingIngredients } from "@/lib/parser/shopping-diff";
 import {
   buildHowToCookContext,
+  getHowToCookDocByPath,
   getHowToCookReferenceByPath,
   retrieveHowToCookReferences,
+  type HowToCookDoc,
   type HowToCookReference,
 } from "@/lib/rag/howtocook";
 import { recipeResponseSchema, type RecipeResponse } from "@/lib/schemas/recipe.schema";
@@ -102,6 +104,106 @@ function fallbackRecipe(
   };
 }
 
+function parseSection(content: string, header: string, nextHeaders: string[]): string[] {
+  const lines = content.split("\n");
+  const startIndex = lines.findIndex((line) => line.trim() === header);
+  if (startIndex < 0) return [];
+  let endIndex = lines.length;
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (nextHeaders.includes(trimmed)) {
+      endIndex = i;
+      break;
+    }
+  }
+  return lines.slice(startIndex + 1, endIndex);
+}
+
+function parseHowToCookIngredients(doc: HowToCookDoc, ownedIngredients: string[]): RecipeResponse["requiredIngredients"] {
+  const section = parseSection(doc.content, "必备原料和工具", ["计算", "操作", "附加内容"]);
+  const named = section
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .filter((line) => Boolean(line) && !line.includes("WARNING"))
+    .slice(0, 8)
+    .map((name) => ({ name, amount: "适量" }));
+
+  const owned = ownedIngredients.slice(0, 6).map((name) => ({ name, amount: "按现有库存" }));
+  const merged = [...owned];
+  for (const item of named) {
+    if (!merged.find((x) => x.name === item.name)) {
+      merged.push(item);
+    }
+  }
+
+  return merged.length ? merged : owned;
+}
+
+function parseHowToCookSteps(doc: HowToCookDoc): RecipeResponse["steps"] {
+  const section = parseSection(doc.content, "操作", ["附加内容"]);
+  const lines = section
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .filter((line) => Boolean(line) && !line.endsWith("步骤"));
+
+  const steps = lines.slice(0, 8).map((instruction, idx) => {
+    const keyMatch = instruction.match(/((?:大火|中火|中小火|小火)[^，。；]{0,16}|[0-9]+(?:-[0-9]+)?\s*(?:秒|分钟|min|S|s))/);
+    return {
+      stepNo: idx + 1,
+      instruction,
+      keyPoint: keyMatch ? `关键控制：${keyMatch[1]}` : "关键控制：按原文节奏执行，注意火候与时间。",
+      sourceTag: "howtocook" as const,
+    };
+  });
+
+  if (steps.length) return steps;
+  return [
+    {
+      stepNo: 1,
+      instruction: "按 HowToCook 原文完成备菜、烹饪与调味流程。",
+      keyPoint: "关键控制：先备齐原料，再按火候与时长执行。",
+      sourceTag: "howtocook",
+    },
+  ];
+}
+
+function parseHowToCookTips(doc: HowToCookDoc): string[] {
+  const section = parseSection(doc.content, "附加内容", []);
+  const tips = section
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .filter((line) => Boolean(line) && !line.includes("Issue") && !line.includes("Pull request"))
+    .slice(0, 3);
+  return tips.length ? tips : ["优先按 HowToCook 原文火候与时长执行。"];
+}
+
+async function buildRecipeFromHowToCookDoc(
+  dishName: string,
+  ownedIngredients: string[],
+  references: HowToCookReference[],
+): Promise<RecipeWithSources | null> {
+  const primary = references[0];
+  if (!primary) return null;
+  const doc = await getHowToCookDocByPath(primary.path);
+  if (!doc) return null;
+
+  const requiredIngredients = parseHowToCookIngredients(doc, ownedIngredients);
+  const missingIngredients = computeMissingIngredients(requiredIngredients, ownedIngredients);
+  const steps = parseHowToCookSteps(doc);
+  const tips = parseHowToCookTips(doc);
+
+  return {
+    dishName,
+    servings: "2人份",
+    requiredIngredients,
+    missingIngredients,
+    steps,
+    tips,
+    sourceType: "howtocook",
+    webReferences: [],
+    timing: { prepMin: 10, cookMin: 15, totalMin: 25 },
+    referenceSources: references,
+    fallbackUsed: false,
+  };
+}
+
 async function resolveHowToCookReferences(
   dishName: string,
   ownedIngredients: string[],
@@ -149,6 +251,10 @@ export async function generateRecipeDetail(
         fallbackUsed: false,
       };
     } catch {
+      const fromHowToCook = await buildRecipeFromHowToCookDoc(dishName, ownedIngredients, references);
+      if (fromHowToCook) {
+        return fromHowToCook;
+      }
       return fallbackRecipe(dishName, ownedIngredients, references);
     }
   }
