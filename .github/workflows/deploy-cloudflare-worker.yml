@@ -103,6 +103,65 @@ jobs:
             echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Sync preview runtime secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ steps.preview_name.outputs.worker_name }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_API_STYLE: ${{ secrets.OPENAI_API_STYLE }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_RECOMMEND_MODEL: ${{ secrets.OPENAI_RECOMMEND_MODEL }}
+          OPENAI_RECIPE_WEBSEARCH_MODEL: ${{ secrets.OPENAI_RECIPE_WEBSEARCH_MODEL }}
+          OPENAI_STT_MODEL: ${{ secrets.OPENAI_STT_MODEL }}
+          OPENAI_IMAGE_MODEL: ${{ secrets.OPENAI_IMAGE_MODEL }}
+          OPENAI_IMAGE_SIZE: ${{ secrets.OPENAI_IMAGE_SIZE }}
+          RECOMMEND_CACHE_TTL_SEC: ${{ secrets.RECOMMEND_CACHE_TTL_SEC }}
+          SUPABASE_HISTORY_TABLE: ${{ secrets.SUPABASE_HISTORY_TABLE }}
+        run: |
+          set -euo pipefail
+
+          REQUIRED_KEYS=(OPENAI_API_KEY SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY)
+          MISSING_KEYS=()
+          for KEY in "${REQUIRED_KEYS[@]}"; do
+            if [ -z "${!KEY:-}" ]; then
+              MISSING_KEYS+=("$KEY")
+            fi
+          done
+
+          if [ "${#MISSING_KEYS[@]}" -gt 0 ]; then
+            echo "Missing required GitHub secrets for preview runtime: ${MISSING_KEYS[*]}"
+            exit 1
+          fi
+
+          ALL_KEYS=(
+            OPENAI_API_KEY
+            SUPABASE_URL
+            SUPABASE_SERVICE_ROLE_KEY
+            OPENAI_BASE_URL
+            OPENAI_API_STYLE
+            OPENAI_MODEL
+            OPENAI_RECOMMEND_MODEL
+            OPENAI_RECIPE_WEBSEARCH_MODEL
+            OPENAI_STT_MODEL
+            OPENAI_IMAGE_MODEL
+            OPENAI_IMAGE_SIZE
+            RECOMMEND_CACHE_TTL_SEC
+            SUPABASE_HISTORY_TABLE
+          )
+
+          for KEY in "${ALL_KEYS[@]}"; do
+            VALUE="${!KEY:-}"
+            if [ -z "$VALUE" ]; then
+              continue
+            fi
+            printf '%s' "$VALUE" | npx wrangler secret put "$KEY" --name "$WORKER_NAME" --config wrangler.jsonc >/dev/null
+            echo "Synced secret: $KEY"
+          done
+
       - name: Publish preview URL
         run: |
           URL="${{ steps.deploy_preview.outputs.preview_url }}"
