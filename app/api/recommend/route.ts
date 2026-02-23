@@ -5,6 +5,7 @@ import { recommendRequestSchema } from "@/lib/schemas/recommend.schema";
 import { normalizeIngredientList } from "@/lib/parser/ingredient-normalizer";
 import { getEnv } from "@/lib/utils/env";
 import { sha256 } from "@/lib/utils/hash";
+import { retrieveHowToCookReferences } from "@/lib/rag/howtocook";
 
 export const runtime = "nodejs";
 
@@ -68,9 +69,18 @@ export async function POST(req: Request) {
 
     const dbCached = await findCachedRecommendationByHash(requestHash);
     if (dbCached && isRecommendationArray(dbCached.recommendations)) {
+      const dbInputText = dbCached.inputText || parsed.inputText;
+      const dbOwnedIngredients = Array.isArray(dbCached.ownedIngredients)
+        ? dbCached.ownedIngredients.map((item) => String(item)).filter(Boolean)
+        : ownedIngredients;
+      const referenceSources = await retrieveHowToCookReferences({
+        inputText: dbInputText,
+        ownedIngredients: dbOwnedIngredients,
+        limit: 3,
+      });
       const value: RecommendWithSources = {
         recommendations: dbCached.recommendations,
-        referenceSources: [],
+        referenceSources,
       };
       writeCache(key, value);
       return NextResponse.json({ ...value, cacheHit: true, cacheSource: "database" });

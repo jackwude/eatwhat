@@ -1,9 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-const HOW_TO_COOK_ROOT = path.join(process.cwd(), "data", "HowToCook");
-const DISHES_ROOT = path.join(HOW_TO_COOK_ROOT, "dishes");
-
 type HowToCookDoc = {
   title: string;
   relativePath: string;
@@ -20,6 +17,35 @@ export type HowToCookReference = {
 };
 
 let docsCache: Promise<HowToCookDoc[]> | null = null;
+let resolvedHowToCookRoot: string | null = null;
+
+async function findHowToCookRoot(): Promise<string | null> {
+  if (resolvedHowToCookRoot) return resolvedHowToCookRoot;
+
+  const envRoot = process.env.HOWTOCOOK_DATA_ROOT?.trim();
+  const candidates = [
+    ...(envRoot ? [envRoot] : []),
+    path.join(process.cwd(), "data", "HowToCook"),
+    path.resolve("data", "HowToCook"),
+    path.join(process.cwd(), ".open-next", "server-functions", "default", "data", "HowToCook"),
+    path.resolve(".open-next", "server-functions", "default", "data", "HowToCook"),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(path.join(candidate, "dishes"));
+      resolvedHowToCookRoot = candidate;
+      return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  console.error(
+    `[howtocook] Unable to resolve HowToCook root. Checked: ${candidates.join(" | ")}`,
+  );
+  return null;
+}
 
 function normalizeText(input: string): string {
   return input
@@ -103,20 +129,20 @@ async function listMarkdownFiles(root: string): Promise<string[]> {
 }
 
 async function loadHowToCookDocsInternal(): Promise<HowToCookDoc[]> {
-  try {
-    await fs.access(DISHES_ROOT);
-  } catch {
+  const root = await findHowToCookRoot();
+  if (!root) {
     return [];
   }
+  const dishesRoot = path.join(root, "dishes");
 
-  const files = await listMarkdownFiles(DISHES_ROOT);
+  const files = await listMarkdownFiles(dishesRoot);
   const docs = await Promise.all(
     files.map(async (file) => {
       const raw = await fs.readFile(file, "utf8");
       const fallback = path.basename(file, ".md");
       const title = firstLineTitle(raw, fallback);
       const content = stripMarkdown(raw);
-      const relativePath = path.relative(HOW_TO_COOK_ROOT, file);
+      const relativePath = path.relative(root, file);
 
       return {
         title,
