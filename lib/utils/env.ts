@@ -1,6 +1,21 @@
 import { z } from "zod";
 
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const OPENAI_BASE_HOST = "api.openai.com";
+
+function isArkStyleModel(model?: string) {
+  if (!model) return false;
+  return /^(doubao-|deepseek-)/.test(model);
+}
+
+function isUuidLikeApiKey(apiKey: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(apiKey);
+}
+
+function shouldForceArkBase(baseUrl: string | undefined, apiKey: string, models: Array<string | undefined>) {
+  if (!baseUrl || !baseUrl.includes(OPENAI_BASE_HOST)) return false;
+  return models.some((model) => isArkStyleModel(model)) || isUuidLikeApiKey(apiKey);
+}
 
 const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
@@ -72,10 +87,26 @@ export function getEnv(): ServerEnv {
     throw new Error(`Invalid server env: ${detail}`);
   }
 
+  const resolvedOpenAiBase =
+    shouldForceArkBase(parsed.data.OPENAI_BASE_URL || undefined, parsed.data.OPENAI_API_KEY, [
+      parsed.data.OPENAI_MODEL,
+      parsed.data.OPENAI_RECOMMEND_MODEL,
+      parsed.data.OPENAI_RECIPE_WEBSEARCH_MODEL,
+    ])
+      ? DEFAULT_ARK_BASE_URL
+      : parsed.data.OPENAI_BASE_URL || DEFAULT_ARK_BASE_URL;
+
+  const resolvedImageBase =
+    shouldForceArkBase(parsed.data.IMAGE_BASE_URL || parsed.data.OPENAI_BASE_URL || undefined, parsed.data.IMAGE_API_KEY || parsed.data.OPENAI_API_KEY, [
+      parsed.data.OPENAI_IMAGE_MODEL,
+    ])
+      ? DEFAULT_ARK_BASE_URL
+      : parsed.data.IMAGE_BASE_URL || resolvedOpenAiBase;
+
   cache = {
     ...parsed.data,
-    OPENAI_BASE_URL: parsed.data.OPENAI_BASE_URL || DEFAULT_ARK_BASE_URL,
-    IMAGE_BASE_URL: parsed.data.IMAGE_BASE_URL || parsed.data.OPENAI_BASE_URL || DEFAULT_ARK_BASE_URL,
+    OPENAI_BASE_URL: resolvedOpenAiBase,
+    IMAGE_BASE_URL: resolvedImageBase,
     DATABASE_URL: parsed.data.DATABASE_URL || undefined,
   };
 
