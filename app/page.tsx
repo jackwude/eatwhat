@@ -28,7 +28,12 @@ function toOwnedIngredients(value: unknown): string[] {
 }
 
 async function fetchRecommendHistory(): Promise<HistoryItem[]> {
-  const res = await fetch("/api/history?kind=recommend&limit=10", { cache: "no-store" });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  const res = await fetch("/api/history?kind=recommend&limit=10", {
+    cache: "no-store",
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "历史记录读取失败");
   return data.history as HistoryItem[];
@@ -42,6 +47,7 @@ export default function HomePage() {
     queryKey: ["home", "recommend-history"],
     queryFn: fetchRecommendHistory,
     staleTime: 1000 * 30,
+    retry: 0,
   });
 
   const ownedIngredients = useMemo(() => parseIngredients(inputText), [inputText]);
@@ -89,9 +95,14 @@ export default function HomePage() {
       <section className="glass-card rounded-3xl p-6 sm:p-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xl font-semibold">历史推荐记录</h2>
-          <button type="button" className="royal-link text-sm font-medium" onClick={() => historyQuery.refetch()}>
-            刷新
-          </button>
+          <Button
+            type="button"
+            className="relative z-10 h-9 px-3 text-xs"
+            onClick={() => historyQuery.refetch()}
+            disabled={historyQuery.isFetching}
+          >
+            {historyQuery.isFetching ? "刷新中..." : "刷新"}
+          </Button>
         </div>
 
         {historyQuery.isLoading ? <p className="text-sm text-[color:var(--muted)]">正在读取历史记录...</p> : null}
