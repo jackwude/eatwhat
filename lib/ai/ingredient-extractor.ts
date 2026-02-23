@@ -13,16 +13,6 @@ export type IngredientExtractResult = {
   rawCandidates: string[];
 };
 
-export type IngredientExtractReason = "llm_success" | "breaker_open" | "llm_failed_fallback";
-
-const BREAKER_THRESHOLD = 5;
-const BREAKER_COOLDOWN_MS = 1000 * 60 * 10;
-const breakerState = {
-  mode: "closed" as "closed" | "open" | "half_open",
-  consecutiveFailures: 0,
-  openUntil: 0,
-};
-
 const template = `{
   "ingredients": ["土豆", "牛肉", "西红柿"]
 }`;
@@ -49,63 +39,14 @@ function normalizeUnique(items: string[]): string[] {
 }
 
 export async function extractOwnedIngredients(inputText: string, ownedIngredientsDraft: string[]): Promise<IngredientExtractResult> {
-  return (await extractOwnedIngredientsWithReason(inputText, ownedIngredientsDraft)).result;
-}
-
-function now() {
-  return Date.now();
-}
-
-function nextBreakerMode() {
-  if (breakerState.mode === "open" && now() >= breakerState.openUntil) {
-    breakerState.mode = "half_open";
-  }
-}
-
-function markSuccess() {
-  breakerState.mode = "closed";
-  breakerState.consecutiveFailures = 0;
-  breakerState.openUntil = 0;
-}
-
-function markFailure(error: unknown) {
-  breakerState.consecutiveFailures += 1;
-  const shouldOpen = breakerState.mode === "half_open" || breakerState.consecutiveFailures >= BREAKER_THRESHOLD;
-  if (shouldOpen) {
-    breakerState.mode = "open";
-    breakerState.openUntil = now() + BREAKER_COOLDOWN_MS;
-  }
-  console.warn("[extract] llm failure", {
-    extractBreakerState: breakerState.mode,
-    extractFailureReason: error instanceof Error ? error.message : "unknown",
-    consecutiveFailures: breakerState.consecutiveFailures,
-  });
-}
-
-export async function extractOwnedIngredientsWithReason(
-  inputText: string,
-  ownedIngredientsDraft: string[],
-): Promise<{ result: IngredientExtractResult; reason: IngredientExtractReason }> {
   const rawCandidates = splitCandidates(inputText, ownedIngredientsDraft);
-  nextBreakerMode();
-
-  if (breakerState.mode === "open") {
-    return {
-      result: {
-        ingredients: normalizeUnique(rawCandidates),
-        source: "fallback_rule",
-        rawCandidates,
-      },
-      reason: "breaker_open",
-    };
-  }
 
   try {
     const raw = await callJsonModel<unknown>({
       system: `${SYSTEM_PROMPT_BASE}\n${SYSTEM_PROMPT_INGREDIENT_EXTRACT}`,
       user: buildIngredientExtractPrompt(inputText, rawCandidates),
       responseTemplate: template,
-      retries: 0,
+      retries: 1,
       model: "deepseek-v3-2-251201",
     });
 
@@ -113,27 +54,19 @@ export async function extractOwnedIngredientsWithReason(
     const ingredients = normalizeUnique(parsed.ingredients);
 
     if (ingredients.length) {
-      markSuccess();
       return {
-        result: {
-          ingredients,
-          source: "llm",
-          rawCandidates,
-        },
-        reason: "llm_success",
+        ingredients,
+        source: "llm",
+        rawCandidates,
       };
     }
-    markFailure("empty_ingredients");
-  } catch (error) {
-    markFailure(error);
+  } catch {
+    // Swallow and fallback to deterministic parsing.
   }
 
   return {
-    result: {
-      ingredients: normalizeUnique(rawCandidates),
-      source: "fallback_rule",
-      rawCandidates,
-    },
-    reason: "llm_failed_fallback",
+    ingredients: normalizeUnique(rawCandidates),
+    source: "fallback_rule",
+    rawCandidates,
   };
 }

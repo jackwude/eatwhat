@@ -9,12 +9,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            retry: 0,
+            retry: 1,
             staleTime: 1000 * 60,
             refetchOnWindowFocus: false,
           },
           mutations: {
-            retry: 0,
+            retry: 1,
           },
         },
       }),

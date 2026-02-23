@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { createHistoryEntry, findCachedRecommendationByHash, findLatestOwnedIngredientsByInputText } from "@/lib/db/queries";
+import { createHistoryEntry, findCachedRecommendationByHash } from "@/lib/db/queries";
 import { generateRecommendations, type RecommendWithSources } from "@/lib/ai/recommend";
 import { recommendRequestSchema } from "@/lib/schemas/recommend.schema";
 import { getEnv } from "@/lib/utils/env";
 import { sha256 } from "@/lib/utils/hash";
 import { retrieveHowToCookReferences } from "@/lib/rag/howtocook";
-import { extractOwnedIngredientsWithReason, type IngredientExtractReason, type IngredientExtractResult } from "@/lib/ai/ingredient-extractor";
-import { readExtractCache, writeExtractCache } from "@/lib/cache/extract-cache";
+import { extractOwnedIngredients } from "@/lib/ai/ingredient-extractor";
 
 export const runtime = "nodejs";
 
@@ -78,30 +77,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const parsed = recommendRequestSchema.parse(body);
-    let extracted: IngredientExtractResult;
-    let ingredientExtractReason: IngredientExtractReason;
-
-    const extractMemory = readExtractCache(parsed.inputText);
-    if (extractMemory) {
-      extracted = extractMemory.result;
-      ingredientExtractReason = extractMemory.reason;
-    } else {
-      const dbOwnedIngredients = await findLatestOwnedIngredientsByInputText(parsed.inputText);
-      if (dbOwnedIngredients?.length) {
-        extracted = {
-          ingredients: dbOwnedIngredients,
-          source: "fallback_rule",
-          rawCandidates: dbOwnedIngredients,
-        };
-        ingredientExtractReason = "llm_failed_fallback";
-      } else {
-        const extractResult = await extractOwnedIngredientsWithReason(parsed.inputText, parsed.ownedIngredients);
-        extracted = extractResult.result;
-        ingredientExtractReason = extractResult.reason;
-      }
-      writeExtractCache(parsed.inputText, extracted, ingredientExtractReason);
-    }
-
+    const extracted = await extractOwnedIngredients(parsed.inputText, parsed.ownedIngredients);
     const ownedIngredients = extracted.ingredients;
     if (!ownedIngredients.length) {
       return NextResponse.json({ error: "未识别到可用食材，请补充更明确的食材名" }, { status: 400 });
@@ -116,7 +92,6 @@ export async function POST(req: Request) {
         ...cached,
         normalizedOwnedIngredients: ownedIngredients,
         ingredientExtractSource: extracted.source,
-        ingredientExtractReason,
         cacheHit: true,
         cacheSource: "memory",
       });
@@ -143,7 +118,6 @@ export async function POST(req: Request) {
         ...value,
         normalizedOwnedIngredients: ownedIngredients,
         ingredientExtractSource: extracted.source,
-        ingredientExtractReason,
         cacheHit: true,
         cacheSource: "database",
       });
@@ -158,7 +132,6 @@ export async function POST(req: Request) {
       ...response,
       normalizedOwnedIngredients: ownedIngredients,
       ingredientExtractSource: extracted.source,
-      ingredientExtractReason,
       cacheHit: false,
       cacheSource: "llm",
     });

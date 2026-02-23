@@ -40,4 +40,3 @@ export const recipeRequestSchema = z.object({
 });
 
 export type RecipeResponse = z.infer<typeof recipeResponseSchema>;
-export type RecipeCacheSource = "memory" | "database" | "llm";
