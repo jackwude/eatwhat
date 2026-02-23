@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+
 const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_MODEL: z.string().min(1).default("doubao-seed-2-0-pro-260215"),
@@ -72,8 +74,8 @@ export function getEnv(): ServerEnv {
 
   cache = {
     ...parsed.data,
-    OPENAI_BASE_URL: parsed.data.OPENAI_BASE_URL || undefined,
-    IMAGE_BASE_URL: parsed.data.IMAGE_BASE_URL || undefined,
+    OPENAI_BASE_URL: parsed.data.OPENAI_BASE_URL || DEFAULT_ARK_BASE_URL,
+    IMAGE_BASE_URL: parsed.data.IMAGE_BASE_URL || parsed.data.OPENAI_BASE_URL || DEFAULT_ARK_BASE_URL,
     DATABASE_URL: parsed.data.DATABASE_URL || undefined,
   };
 

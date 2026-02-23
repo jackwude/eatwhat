@@ -28,7 +28,12 @@ const template = `{
 }`;
 
 function splitCandidates(inputText: string, ownedIngredientsDraft: string[]): string[] {
-  const fromText = inputText
+  const cleanedInput = inputText
+    .replace(/我刚在超市买了|我在超市买了|刚在超市买了|在超市买了/g, " ")
+    .replace(/我刚买了|我买了|我现在有|我有|家里有|冰箱里有/g, " ")
+    .replace(/今晚吃啥|今天吃什么|怎么吃|怎么做|能做什么|如何做|咋做|可以做啥|做什么/g, " ");
+
+  const fromText = cleanedInput
     .split(/[，,、；;。\n\s]+/g)
     .map((item) => item.trim())
     .filter(Boolean);
