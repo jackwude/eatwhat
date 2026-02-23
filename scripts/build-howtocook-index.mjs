@@ -90,7 +90,6 @@ async function main() {
   docs.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-CN'));
 
   const payload = {
-    generatedAt: new Date().toISOString(),
     sourceRoot: 'data/HowToCook',
     count: docs.length,
     docs,

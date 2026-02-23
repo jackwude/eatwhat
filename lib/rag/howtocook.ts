@@ -9,7 +9,6 @@ type HowToCookDoc = {
 };
 
 type HowToCookIndex = {
-  generatedAt: string;
   sourceRoot: string;
   count: number;
   docs: HowToCookDoc[];

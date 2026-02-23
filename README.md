@@ -46,19 +46,25 @@ npx wrangler login
 npm run cf:deploy
 ```
 
-## GitHub 自动部署到 Cloudflare（推荐）
+## GitHub Actions 自动部署到 Cloudflare（推荐）
 
-目标：`push main` 自动上线生产；PR 自动生成预览环境。
+目标：`push main` 自动上线生产；PR 自动跑构建校验。
 
-1. Cloudflare Dashboard -> `Workers & Pages` -> `Create` -> `Workers` -> `Connect to Git`
-2. 连接 GitHub 仓库：`jackwude/eatwhat`
-3. 生产分支设置为：`main`
-4. 开启 PR Preview Deployments
-5. 构建命令设置：
-   - Install: `npm ci`
-   - Build: `npm run cf:build`
-   - Deploy: `npm run cf:deploy`
-6. 在 Cloudflare 项目 `Settings -> Variables and Secrets` 配置环境变量（Production + Preview 都配置）
+已提供工作流文件：`.github/workflows/deploy-cloudflare-worker.yml`
+
+### 1. GitHub Secrets（必须）
+
+在 GitHub 仓库 `Settings -> Secrets and variables -> Actions` 添加：
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+说明：
+- `CLOUDFLARE_API_TOKEN` 需要至少包含 Workers Script 的编辑发布权限。
+- `CLOUDFLARE_ACCOUNT_ID` 使用你的 Cloudflare Account ID。
+
+### 2. Cloudflare Worker Runtime 变量（必须）
+
+在 Cloudflare Dashboard 的 Worker 项目中继续维护运行时变量（Production）：
 
 建议配置：
 - `OPENAI_API_KEY`
@@ -76,6 +82,11 @@ npm run cf:deploy
 - `SUPABASE_HISTORY_TABLE`（默认 `HistoryEntry`）
 - `RECOMMEND_CACHE_TTL_SEC`
 - `NEXT_PUBLIC_ASR_GATEWAY_URL`（启用语音网关时）
+
+### 3. 触发规则
+
+- `push main`：执行 `build + wrangler deploy`，自动更新生产环境。
+- `pull_request -> main`：仅执行 `cf:build` 作为预检，不发布。
 
 ## 安全说明
 
