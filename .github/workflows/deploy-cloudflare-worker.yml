@@ -3,18 +3,18 @@ name: Deploy to Cloudflare Workers
 on:
   push:
     branches:
-      - main
+      - "**"
   workflow_dispatch:
   pull_request:
     branches:
       - main
 
 concurrency:
-  group: cf-worker-${{ github.ref }}
+  group: cf-worker-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  build_pr:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -33,8 +33,8 @@ jobs:
       - name: Build for Cloudflare
         run: npm run cf:build
 
-  deploy:
-    if: github.event_name != 'pull_request'
+  deploy_production:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -57,3 +57,62 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy_preview:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for Cloudflare
+        run: npm run cf:build
+
+      - name: Compute preview worker name
+        id: preview_name
+        run: |
+          set -euo pipefail
+          RAW="${GITHUB_REF_NAME,,}"
+          SAFE="$(echo "$RAW" | sed -E 's#[/_\.]+#-#g; s#[^a-z0-9-]#-#g; s#-+#-#g; s#^-+##; s#-+$##')"
+          if [ -z "$SAFE" ]; then
+            SAFE="branch"
+          fi
+          SAFE="${SAFE:0:45}"
+          WORKER_NAME="eatwhat-preview-${SAFE}"
+          echo "worker_name=$WORKER_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy preview worker
+        id: deploy_preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc --name "${{ steps.preview_name.outputs.worker_name }}" 2>&1 | tee deploy.log
+          PREVIEW_URL="$(grep -Eo 'https://[^ ]+workers\.dev' deploy.log | tail -n 1 || true)"
+          if [ -n "$PREVIEW_URL" ]; then
+            echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish preview URL
+        run: |
+          URL="${{ steps.deploy_preview.outputs.preview_url }}"
+          if [ -z "$URL" ]; then
+            URL="https://${{ steps.preview_name.outputs.worker_name }}.workers.dev"
+          fi
+          {
+            echo "### Preview Deployment"
+            echo ""
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Worker: \`${{ steps.preview_name.outputs.worker_name }}\`"
+            echo "- URL: ${URL}"
+          } >> "$GITHUB_STEP_SUMMARY"

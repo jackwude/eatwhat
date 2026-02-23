@@ -87,6 +87,14 @@ npm run cf:deploy
 
 - `push main`：执行 `build + wrangler deploy`，自动更新生产环境。
 - `pull_request -> main`：仅执行 `cf:build` 作为预检，不发布。
+- `push 非 main 分支`：自动部署到预发 Worker（`eatwhat-preview-<branch>`），用于线上验证分支功能。
+
+### 4. 分支预发验证
+
+1. 在功能分支开发并推送：`git push origin <branch>`
+2. 打开 GitHub Actions 的 `Deploy to Cloudflare Workers` 任务
+3. 在 Job Summary 中获取预发 URL（workers.dev）
+4. 在预发 URL 完成功能验证后，再决定是否合并到 `main`
 
 ## 安全说明
 
