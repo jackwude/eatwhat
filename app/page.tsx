@@ -93,14 +93,14 @@ export default function HomePage() {
         <div className="space-y-3">
           <IngredientInput value={inputText} onChange={setInputText} />
           <div className="flex items-center gap-3">
-            <Button onClick={handleSubmit} disabled={!ownedIngredients.length}>
+            <Button onClick={handleSubmit} disabled={!inputText.trim()}>
               智能推荐
             </Button>
           </div>
         </div>
 
         <div className="mt-6 text-sm text-[color:var(--muted)]">
-          <p>识别到食材：{ownedIngredients.length ? ownedIngredients.join("、") : "尚未输入"}</p>
+          <p>识别到食材：提交后由 AI 在服务端语义识别并标准化</p>
         </div>
       </section>
 

@@ -7,7 +7,7 @@ import { ErrorState } from "@/components/common/error-state";
 import { Loading } from "@/components/common/loading";
 import { RecommendationCard } from "@/components/recipe/recommendation-card";
 import { RoyalDivider } from "@/components/ui/royal-divider";
-import type { RecommendResponse } from "@/lib/schemas/recommend.schema";
+import type { IngredientExtractSource, RecommendResponse } from "@/lib/schemas/recommend.schema";
 
 type ReferenceSource = {
   title: string;
@@ -18,6 +18,8 @@ type ReferenceSource = {
 
 type RecommendApiResponse = RecommendResponse & {
   referenceSources?: ReferenceSource[];
+  normalizedOwnedIngredients?: string[];
+  ingredientExtractSource?: IngredientExtractSource;
 };
 
 async function fetchRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendApiResponse> {
@@ -47,9 +49,11 @@ export function RecommendPageClient() {
   const query = useQuery({
     queryKey: ["recommend", effectiveQ, owned.join("|")],
     queryFn: () => fetchRecommendations(effectiveQ, owned),
-    enabled: Boolean(effectiveQ && owned.length),
+    enabled: Boolean(effectiveQ),
     staleTime: 1000 * 60 * 5,
   });
+
+  const effectiveOwned = query.data?.normalizedOwnedIngredients?.length ? query.data.normalizedOwnedIngredients : owned;
 
   const grouped = query.data
     ? {
@@ -68,7 +72,12 @@ export function RecommendPageClient() {
             返回输入
           </Link>
         </div>
-        <p className="text-sm text-[color:var(--muted)]">已有食材：{owned.join("、") || "未提供"}</p>
+        <p className="text-sm text-[color:var(--muted)]">已有食材：{effectiveOwned.join("、") || "未识别"}</p>
+        {query.data?.ingredientExtractSource ? (
+          <p className="mt-1 text-xs text-[color:var(--muted)]">
+            识别来源：{query.data.ingredientExtractSource === "llm" ? "DeepSeek 语义抽取" : "规则兜底抽取"}
+          </p>
+        ) : null}
       </section>
 
       {query.isLoading ? <Loading label="正在分析食材并生成推荐..." showProgress /> : null}
@@ -82,9 +91,9 @@ export function RecommendPageClient() {
         />
       ) : null}
 
-      {!owned.length ? (
+      {!effectiveQ ? (
         <section className="glass-card rounded-2xl p-5 text-sm text-[color:var(--muted)]">
-          缺少食材参数，无法生成推荐。请返回输入页重新提交食材。
+          缺少输入参数，无法生成推荐。请返回输入页重新提交。
         </section>
       ) : null}
 
@@ -97,7 +106,7 @@ export function RecommendPageClient() {
                 {grouped.easy.map((dish) => {
                   const params = new URLSearchParams({
                     dishName: dish.name,
-                    owned: owned.join(","),
+                    owned: effectiveOwned.join(","),
                     q: effectiveQ,
                     sourceHintType: dish.sourceType || "llm",
                   });
@@ -117,7 +126,7 @@ export function RecommendPageClient() {
                 {grouped.medium.map((dish) => {
                   const params = new URLSearchParams({
                     dishName: dish.name,
-                    owned: owned.join(","),
+                    owned: effectiveOwned.join(","),
                     q: effectiveQ,
                     sourceHintType: dish.sourceType || "llm",
                   });
@@ -137,7 +146,7 @@ export function RecommendPageClient() {
                 {grouped.hard.map((dish) => {
                   const params = new URLSearchParams({
                     dishName: dish.name,
-                    owned: owned.join(","),
+                    owned: effectiveOwned.join(","),
                     q: effectiveQ,
                     sourceHintType: dish.sourceType || "llm",
                   });

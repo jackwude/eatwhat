@@ -37,10 +37,25 @@ export const SYSTEM_PROMPT_RECIPE = `
 - 若参考片段中存在同名或高度相关菜谱，步骤顺序和关键火候需与参考保持一致或给出合理解释。
 `;
 
+export const SYSTEM_PROMPT_INGREDIENT_EXTRACT = `
+任务：从用户自然语言中提取“可烹饪食材名”。
+要求：
+- 只输出 JSON，不输出任何解释。
+- 仅输出 ingredients 数组，每项必须是食材名。
+- 严禁输出口语、动作、数量词、语气词，例如：我刚在超市买了、现在、有、一些、怎么吃。
+- 严禁输出厨具、调味步骤、时间描述。
+- 食材名尽量用常见中文名称，如番茄可写为番茄（后续会做标准化）。
+- 若不确定某个词是否食材，宁可不输出。
+`;
+
 export function buildRecommendUserPrompt(inputText: string, ownedIngredients: string[]) {
   return `用户输入：${inputText}\n用户已有食材：${ownedIngredients.join("、")}\n请严格按目标 JSON 结构输出。`;
 }
 
 export function buildRecipeUserPrompt(dishName: string, ownedIngredients: string[]) {
   return `目标菜品：${dishName}\n用户已有食材：${ownedIngredients.join("、")}\n请严格按目标 JSON 结构输出。`;
+}
+
+export function buildIngredientExtractPrompt(inputText: string, rawCandidates: string[]) {
+  return `用户原始输入：${inputText}\n候选词：${rawCandidates.join("、")}\n请提取可烹饪食材名。`;
 }
