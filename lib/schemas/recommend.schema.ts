@@ -23,7 +23,8 @@ export const recommendResponseSchema = z.object({
 
 export const recommendRequestSchema = z.object({
   inputText: z.string().min(1),
-  ownedIngredients: z.array(z.string().min(1)).min(1),
+  ownedIngredients: z.array(z.string().min(1)).default([]),
 });
 
 export type RecommendResponse = z.infer<typeof recommendResponseSchema>;
+export type IngredientExtractSource = "llm" | "fallback_rule";
