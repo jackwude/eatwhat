@@ -99,3 +99,67 @@ export async function findCachedRecommendationByHash(requestHash: string) {
     createdAt: data.createdAt,
   };
 }
+
+export async function findLatestOwnedIngredientsByInputText(inputText: string) {
+  assertTableConfig();
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE_NAME)
+    .select("ownedIngredients, createdAt")
+    .eq("kind", "recommend")
+    .eq("inputText", inputText)
+    .order("createdAt", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Extract cache query failed: ${error.message}`);
+  }
+
+  if (!data || !Array.isArray(data.ownedIngredients)) return null;
+  return data.ownedIngredients.map((item) => String(item)).filter(Boolean);
+}
+
+export async function findCachedRecipeDetailByHash(requestHash: string) {
+  assertTableConfig();
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE_NAME)
+    .select("recipeDetail, createdAt")
+    .eq("kind", "recipe")
+    .eq("requestHash", requestHash)
+    .not("recipeDetail", "is", null)
+    .order("createdAt", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Recipe cache query failed: ${error.message}`);
+  }
+
+  if (!data || !data.recipeDetail) return null;
+  return data.recipeDetail;
+}
+
+export async function findCachedImageByHash(requestHash: string) {
+  assertTableConfig();
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE_NAME)
+    .select("recipeDetail, createdAt")
+    .eq("kind", "image")
+    .eq("requestHash", requestHash)
+    .not("recipeDetail", "is", null)
+    .order("createdAt", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Image cache query failed: ${error.message}`);
+  }
+
+  if (!data || !data.recipeDetail || typeof data.recipeDetail !== "object") return null;
+  const detail = data.recipeDetail as { imageUrl?: unknown };
+  if (typeof detail.imageUrl !== "string" || !detail.imageUrl) return null;
+  return detail.imageUrl;
+}

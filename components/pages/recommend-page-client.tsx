@@ -6,11 +6,12 @@ import { useSearchParams } from "next/navigation";
 import { ErrorState } from "@/components/common/error-state";
 import { Loading } from "@/components/common/loading";
 import { RecommendationCard } from "@/components/recipe/recommendation-card";
-import type { IngredientExtractSource, RecommendResponse } from "@/lib/schemas/recommend.schema";
+import type { IngredientExtractReason, IngredientExtractSource, RecommendResponse } from "@/lib/schemas/recommend.schema";
 
 type RecommendApiResponse = RecommendResponse & {
   normalizedOwnedIngredients?: string[];
   ingredientExtractSource?: IngredientExtractSource;
+  ingredientExtractReason?: IngredientExtractReason;
 };
 
 async function fetchRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendApiResponse> {
@@ -42,6 +43,7 @@ export function RecommendPageClient() {
     queryFn: () => fetchRecommendations(effectiveQ, owned),
     enabled: Boolean(effectiveQ),
     staleTime: 1000 * 60 * 5,
+    retry: 0,
   });
 
   const effectiveOwned = query.data?.normalizedOwnedIngredients?.length ? query.data.normalizedOwnedIngredients : owned;

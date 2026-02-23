@@ -7,4 +7,5 @@ export const imageRequestSchema = z.object({
 
 export const imageResponseSchema = z.object({
   imageUrl: z.string().url(),
+  cacheSource: z.enum(["memory", "database", "generated"]).optional(),
 });

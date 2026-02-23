@@ -23,6 +23,7 @@ type RecipeApiResponse = RecipeResponse & {
   referenceSources?: ReferenceSource[];
   sourceType?: "howtocook" | "web" | "fallback" | "llm";
   webReferences?: Array<{ title: string; url: string; snippet: string }>;
+  cacheSource?: "memory" | "database" | "llm";
 };
 
 const PLACEHOLDER_IMAGE_URL = "/placeholder-dish.svg";
@@ -66,6 +67,7 @@ export function RecipePageClient() {
     queryFn: () => fetchRecipe(params.id, dishName, owned, sourceHintPath, sourceHintType),
     enabled: Boolean(dishName && params.id),
     staleTime: 1000 * 60 * 5,
+    retry: 0,
   });
 
   const imageQuery = useQuery({
