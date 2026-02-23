@@ -4,6 +4,7 @@ const serverEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_MODEL: z.string().min(1).default("doubao-seed-2-0-pro-260215"),
   OPENAI_RECOMMEND_MODEL: z.string().min(1).optional(),
+  OPENAI_RECIPE_WEBSEARCH_MODEL: z.string().min(1).optional(),
   OPENAI_BASE_URL: z.string().url().optional().or(z.literal("")),
   OPENAI_API_STYLE: z.enum(["responses", "chat"]).default("responses"),
   OPENAI_STT_MODEL: z.string().min(1).default("whisper-1"),
@@ -22,6 +23,7 @@ export type ServerEnv = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL: string;
   OPENAI_RECOMMEND_MODEL?: string;
+  OPENAI_RECIPE_WEBSEARCH_MODEL?: string;
   OPENAI_BASE_URL?: string;
   OPENAI_API_STYLE: "responses" | "chat";
   OPENAI_STT_MODEL: string;
@@ -45,6 +47,7 @@ export function getEnv(): ServerEnv {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     OPENAI_MODEL: process.env.OPENAI_MODEL,
     OPENAI_RECOMMEND_MODEL: process.env.OPENAI_RECOMMEND_MODEL,
+    OPENAI_RECIPE_WEBSEARCH_MODEL: process.env.OPENAI_RECIPE_WEBSEARCH_MODEL,
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
     OPENAI_API_STYLE: process.env.OPENAI_API_STYLE,
     OPENAI_STT_MODEL: process.env.OPENAI_STT_MODEL,

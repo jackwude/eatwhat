@@ -90,6 +90,15 @@ function getHowToCookDocs(): HowToCookDoc[] {
   return docs;
 }
 
+function toReference(doc: HowToCookDoc, score: number): HowToCookReference {
+  return {
+    title: doc.title,
+    path: doc.relativePath,
+    score,
+    excerpt: buildExcerpt(doc),
+  };
+}
+
 export async function retrieveHowToCookReferences(args: {
   inputText?: string;
   ownedIngredients?: string[];
@@ -107,14 +116,23 @@ export async function retrieveHowToCookReferences(args: {
     .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, args.limit ?? 3)
-    .map((item) => ({
-      title: item.doc.title,
-      path: item.doc.relativePath,
-      score: item.score,
-      excerpt: buildExcerpt(item.doc),
-    }));
+    .map((item) => toReference(item.doc, item.score));
 
   return scored;
+}
+
+export async function getHowToCookReferenceByPath(pathHint: string): Promise<HowToCookReference | null> {
+  const docs = getHowToCookDocs();
+  const normalized = normalizeText(pathHint);
+  if (!normalized) return null;
+
+  const matched =
+    docs.find((doc) => normalizeText(doc.relativePath) === normalized) ||
+    docs.find((doc) => normalizeText(doc.relativePath).includes(normalized)) ||
+    docs.find((doc) => normalized.includes(normalizeText(doc.relativePath)));
+
+  if (!matched) return null;
+  return toReference(matched, 999);
 }
 
 export function buildHowToCookContext(refs: HowToCookReference[]): string {

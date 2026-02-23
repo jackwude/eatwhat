@@ -125,7 +125,12 @@ function tryParsePayloadToJsonObject(payload: unknown, expectedKeys: string[]): 
   throw new Error("Unable to parse target JSON object from model response");
 }
 
-async function callByResponsesAPI(system: string, user: string, model: string): Promise<unknown> {
+async function callByResponsesAPI(
+  system: string,
+  user: string,
+  model: string,
+  tools?: Array<Record<string, unknown>>,
+): Promise<unknown> {
   return getClient().responses.create({
     model,
     input: [
@@ -138,6 +143,7 @@ async function callByResponsesAPI(system: string, user: string, model: string): 
         content: [{ type: "input_text", text: user }],
       },
     ],
+    ...(tools?.length ? { tools: tools as never } : {}),
     temperature: 0.4,
     max_output_tokens: 900,
   });
@@ -169,6 +175,7 @@ export async function callJsonModel<T>(args: {
   responseTemplate: string;
   retries?: number;
   model?: string;
+  responsesTools?: Array<Record<string, unknown>>;
 }): Promise<T> {
   const env = getEnv();
   const retries = args.retries ?? 1;
@@ -180,7 +187,7 @@ export async function callJsonModel<T>(args: {
     try {
       const payload =
         env.OPENAI_API_STYLE === "responses"
-          ? await callByResponsesAPI(systemPrompt, args.user, model)
+          ? await callByResponsesAPI(systemPrompt, args.user, model, args.responsesTools)
           : await callByChatAPI(systemPrompt, args.user, model);
 
       return tryParsePayloadToJsonObject(payload, expectedKeys) as T;

@@ -12,7 +12,10 @@ export async function POST(req: Request) {
     const parsed = recipeRequestSchema.parse(body);
     const ownedIngredients = normalizeIngredientList(parsed.ownedIngredients);
 
-    const recipe = await generateRecipeDetail(parsed.dishName, ownedIngredients);
+    const recipe = await generateRecipeDetail(parsed.dishName, ownedIngredients, {
+      sourceHintPath: parsed.sourceHintPath,
+      sourceHintType: parsed.sourceHintType,
+    });
 
     await createHistoryEntry({
       inputText: `查看菜谱: ${parsed.dishName}`,

@@ -12,6 +12,9 @@ export const recommendationSchema = z.object({
   requiredIngredients: z.array(ingredientItemSchema).min(1),
   estimatedTimeMin: z.number().int().positive(),
   difficulty: z.enum(["easy", "medium", "hard"]),
+  sourceType: z.enum(["howtocook", "llm"]).optional(),
+  sourcePath: z.string().min(1).optional(),
+  sourceTitle: z.string().min(1).optional(),
 });
 
 export const recommendResponseSchema = z.object({

@@ -21,15 +21,23 @@ type ReferenceSource = {
 
 type RecipeApiResponse = RecipeResponse & {
   referenceSources?: ReferenceSource[];
+  sourceType?: "howtocook" | "web" | "fallback" | "llm";
+  webReferences?: Array<{ title: string; url: string; snippet: string }>;
 };
 
 const PLACEHOLDER_IMAGE_URL = "/placeholder-dish.svg";
 
-async function fetchRecipe(routeId: string, dishName: string, ownedIngredients: string[]): Promise<RecipeApiResponse> {
+async function fetchRecipe(
+  routeId: string,
+  dishName: string,
+  ownedIngredients: string[],
+  sourceHintPath?: string,
+  sourceHintType?: "howtocook" | "llm",
+): Promise<RecipeApiResponse> {
   const res = await fetch(`/api/recipe/${routeId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dishName, ownedIngredients }),
+    body: JSON.stringify({ dishName, ownedIngredients, sourceHintPath, sourceHintType }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "菜谱生成失败");
@@ -46,14 +54,16 @@ export function RecipePageClient() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  const sourceHintPath = searchParams.get("sourceHintPath") || undefined;
+  const sourceHintType = (searchParams.get("sourceHintType") as "howtocook" | "llm" | null) || undefined;
   const recommendBackHref = `/recommend?${new URLSearchParams({
     q: q || `我有${owned.join("、")}`,
     owned: owned.join(","),
   }).toString()}`;
 
   const recipeQuery = useQuery({
-    queryKey: ["recipe", params.id, dishName, owned.join("|")],
-    queryFn: () => fetchRecipe(params.id, dishName, owned),
+    queryKey: ["recipe", params.id, dishName, owned.join("|"), sourceHintPath || "", sourceHintType || ""],
+    queryFn: () => fetchRecipe(params.id, dishName, owned, sourceHintPath, sourceHintType),
     enabled: Boolean(dishName && params.id),
     staleTime: 1000 * 60 * 5,
   });
@@ -81,6 +91,12 @@ export function RecipePageClient() {
   });
 
   const imageUrl = imageQuery.data || PLACEHOLDER_IMAGE_URL;
+  const sourceTypeLabel = {
+    howtocook: "HowToCook 典籍优先",
+    web: "联网检索补全",
+    fallback: "降级通用菜谱",
+    llm: "模型生成",
+  } as const;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-4xl px-4 py-8 sm:px-6">
@@ -127,6 +143,7 @@ export function RecipePageClient() {
           <article className="glass-card rounded-2xl px-4 py-3 text-xs text-[color:var(--muted)] sm:text-sm">
             御膳时序：备菜 {recipeQuery.data.timing.prepMin} 分钟 | 烹饪 {recipeQuery.data.timing.cookMin} 分钟 | 总计 {recipeQuery.data.timing.totalMin} 分钟
             {recipeQuery.data.tips.length ? ` | 宫廷提示：${recipeQuery.data.tips[0]}` : ""}
+            {recipeQuery.data.sourceType ? ` | 来源模式：${sourceTypeLabel[recipeQuery.data.sourceType]}` : ""}
           </article>
 
           <ShoppingList required={recipeQuery.data.requiredIngredients} missing={recipeQuery.data.missingIngredients} />
@@ -152,6 +169,21 @@ export function RecipePageClient() {
             ) : (
               <p className="text-sm text-[color:var(--muted)]">未命中本地 HowToCook 菜谱，当前结果仅按通用规则生成。</p>
             )}
+
+            {recipeQuery.data.webReferences?.length ? (
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-[color:var(--royal-red)]">联网检索来源</h3>
+                <ul className="mt-2 space-y-2 text-sm">
+                  {recipeQuery.data.webReferences.map((ref, idx) => (
+                    <li key={`${ref.url}-${idx}`} className="rounded-lg border border-[#e3cb9d] bg-[#fff8ea] px-3 py-2">
+                      <p className="font-semibold">{ref.title}</p>
+                      <p className="text-xs text-[color:var(--muted)]">{ref.url}</p>
+                      <p className="mt-1 text-xs text-[color:var(--muted)]">{ref.snippet}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </article>
         </section>
       ) : null}

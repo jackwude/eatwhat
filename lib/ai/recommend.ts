@@ -50,6 +50,31 @@ export type RecommendWithSources = RecommendResponse & {
   fallbackUsed?: boolean;
 };
 
+function attachRecipeSource(
+  recommendations: RecommendResponse["recommendations"],
+  refs: HowToCookReference[],
+): RecommendResponse["recommendations"] {
+  return recommendations.map((item) => {
+    const dishNorm = item.name.replace(/\s+/g, "").toLowerCase();
+    const hit = refs.find((ref) => {
+      const titleNorm = ref.title.replace(/\s+/g, "").toLowerCase();
+      return titleNorm.includes(dishNorm) || dishNorm.includes(titleNorm);
+    });
+    if (!hit) {
+      return {
+        ...item,
+        sourceType: "llm" as const,
+      };
+    }
+    return {
+      ...item,
+      sourceType: "howtocook" as const,
+      sourcePath: hit.path,
+      sourceTitle: hit.title,
+    };
+  });
+}
+
 function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSources {
   const hasEgg = ownedIngredients.some((i) => i.includes("蛋"));
   const hasTofu = ownedIngredients.some((i) => i.includes("豆腐"));
@@ -65,6 +90,7 @@ function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSourc
       ],
       estimatedTimeMin: 15,
       difficulty: "easy" as const,
+      sourceType: "llm" as const,
     },
     {
       id: "dish_easy_2",
@@ -76,6 +102,7 @@ function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSourc
       ],
       estimatedTimeMin: 20,
       difficulty: "easy" as const,
+      sourceType: "llm" as const,
     },
     {
       id: "dish_medium_1",
@@ -87,6 +114,7 @@ function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSourc
       ],
       estimatedTimeMin: 18,
       difficulty: "medium" as const,
+      sourceType: "llm" as const,
     },
     {
       id: "dish_medium_2",
@@ -98,6 +126,7 @@ function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSourc
       ],
       estimatedTimeMin: 28,
       difficulty: "medium" as const,
+      sourceType: "llm" as const,
     },
     {
       id: "dish_hard_1",
@@ -109,6 +138,7 @@ function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSourc
       ],
       estimatedTimeMin: 35,
       difficulty: "hard" as const,
+      sourceType: "llm" as const,
     },
   ];
 
@@ -156,9 +186,10 @@ export async function generateRecommendations(inputText: string, ownedIngredient
 
     const parsed = recommendResponseSchema.parse(raw);
     const normalized = limitByDifficulty(parsed.recommendations);
+    const withSource = attachRecipeSource(normalized, references);
 
     return {
-      recommendations: normalized,
+      recommendations: withSource,
       referenceSources: references,
       fallbackUsed: false,
     };

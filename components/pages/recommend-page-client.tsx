@@ -99,7 +99,11 @@ export function RecommendPageClient() {
                     dishName: dish.name,
                     owned: owned.join(","),
                     q: effectiveQ,
+                    sourceHintType: dish.sourceType || "llm",
                   });
+                  if (dish.sourcePath) {
+                    params.set("sourceHintPath", dish.sourcePath);
+                  }
                   return <RecommendationCard key={dish.id} href={`/recipe/${dish.id}?${params.toString()}`} recommendation={dish} />;
                 })}
               </div>
@@ -115,7 +119,11 @@ export function RecommendPageClient() {
                     dishName: dish.name,
                     owned: owned.join(","),
                     q: effectiveQ,
+                    sourceHintType: dish.sourceType || "llm",
                   });
+                  if (dish.sourcePath) {
+                    params.set("sourceHintPath", dish.sourcePath);
+                  }
                   return <RecommendationCard key={dish.id} href={`/recipe/${dish.id}?${params.toString()}`} recommendation={dish} />;
                 })}
               </div>
@@ -131,7 +139,11 @@ export function RecommendPageClient() {
                     dishName: dish.name,
                     owned: owned.join(","),
                     q: effectiveQ,
+                    sourceHintType: dish.sourceType || "llm",
                   });
+                  if (dish.sourcePath) {
+                    params.set("sourceHintPath", dish.sourcePath);
+                  }
                   return <RecommendationCard key={dish.id} href={`/recipe/${dish.id}?${params.toString()}`} recommendation={dish} />;
                 })}
               </div>

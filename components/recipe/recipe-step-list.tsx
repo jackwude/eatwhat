@@ -13,6 +13,13 @@ function toCjkNo(stepNo: number) {
 }
 
 export function RecipeStepList({ steps }: { steps: Step[] }) {
+  const sourceMap = {
+    howtocook: "HowToCook",
+    web: "联网检索",
+    llm: "模型生成",
+    fallback: "降级兜底",
+  } as const;
+
   return (
     <ol className="stagger-list mt-4 space-y-4">
       {steps.map((step) => (
@@ -20,6 +27,7 @@ export function RecipeStepList({ steps }: { steps: Step[] }) {
           <p className="text-sm font-semibold tracking-[0.16em] text-[color:var(--royal-red)]">{toCjkNo(step.stepNo)} · 御膳步骤</p>
           <p className="mt-1 text-sm leading-6">{step.instruction}</p>
           <KeypointHighlight text={step.keyPoint} />
+          {step.sourceTag ? <p className="mt-2 text-xs text-[color:var(--muted)]">来源：{sourceMap[step.sourceTag]}</p> : null}
         </li>
       ))}
     </ol>
