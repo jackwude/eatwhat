@@ -70,7 +70,12 @@ export function RecommendPageClient() {
         <p className="text-sm text-[color:var(--muted)]">已有食材：{effectiveOwned.join("、") || "未识别"}</p>
         {query.data?.ingredientExtractSource ? (
           <p className="mt-1 text-xs text-[color:var(--muted)]">
-            识别来源：{query.data.ingredientExtractSource === "llm" ? "DeepSeek 语义抽取" : "规则兜底抽取"}
+            识别来源：
+            {query.data.ingredientExtractReason === "cache_reuse"
+              ? "缓存复用"
+              : query.data.ingredientExtractSource === "llm"
+                ? "DeepSeek 语义抽取"
+                : "规则兜底抽取"}
           </p>
         ) : null}
       </section>

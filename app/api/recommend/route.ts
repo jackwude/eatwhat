@@ -107,7 +107,7 @@ export async function POST(req: Request) {
           source: "fallback_rule",
           rawCandidates: dbOwnedIngredients,
         };
-        ingredientExtractReason = "llm_failed_fallback";
+        ingredientExtractReason = "cache_reuse";
       } else {
         const extractResult = await extractOwnedIngredientsWithReason(parsed.inputText, parsed.ownedIngredients);
         extracted = extractResult.result;
