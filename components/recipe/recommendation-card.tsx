@@ -19,11 +19,15 @@ export function RecommendationCard({ recommendation, href }: { recommendation: R
           <h3 className="text-lg font-semibold">{recommendation.name}</h3>
           <RoyalBadge label={difficultyMap[recommendation.difficulty]} variant={recommendation.difficulty} />
         </div>
-        {recommendation.sourceType === "howtocook" ? (
-          <p className="mb-2 inline-flex rounded-full border border-[#c9a55a] bg-[#fff3cf] px-2 py-0.5 text-[11px] font-semibold text-[#8c1f17]">
-            典籍
-          </p>
-        ) : null}
+        <p
+          className={
+            recommendation.sourceType === "howtocook"
+              ? "mb-2 inline-flex rounded-full border border-[#c9a55a] bg-[#fff3cf] px-2 py-0.5 text-[11px] font-semibold text-[#8c1f17]"
+              : "mb-2 inline-flex rounded-full border border-[#94a3b8] bg-[#f8fafc] px-2 py-0.5 text-[11px] font-semibold text-[#334155]"
+          }
+        >
+          {recommendation.sourceType === "howtocook" ? "典籍" : "AI"}
+        </p>
         <p className="text-sm leading-6 text-[color:var(--muted)]">{recommendation.reason}</p>
         <p className="mt-3 text-xs font-semibold tracking-[0.08em] text-[color:var(--royal-red)]">预计 {recommendation.estimatedTimeMin} 分钟</p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">

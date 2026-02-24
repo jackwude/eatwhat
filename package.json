@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "prepare:howtocook-index": "node scripts/build-howtocook-index.mjs",
+    "howtocook:sync": "node scripts/sync-howtocook-upstream.mjs",
+    "howtocook:check": "node scripts/check-howtocook-drift.mjs",
     "prebuild": "npm run prepare:howtocook-index",
     "dev": "next dev --webpack -p 3001",
     "build": "next build --webpack",

@@ -2,7 +2,6 @@ import { callJsonModel } from "@/lib/ai/client";
 import { buildRecipeUserPrompt, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_RECIPE } from "@/lib/ai/prompts";
 import { computeMissingIngredients } from "@/lib/parser/shopping-diff";
 import {
-  buildHowToCookContext,
   getHowToCookDocByPath,
   getHowToCookReferenceByPath,
   retrieveHowToCookReferences,
@@ -37,6 +36,12 @@ export type RecipeWithSources = RecipeResponse & {
   fallbackUsed?: boolean;
 };
 
+function inferKeyPoint(instruction: string): string | undefined {
+  const keyMatch = instruction.match(/((?:大火|中火|中小火|小火|微火)[^，。；]{0,18}|[0-9]+(?:-[0-9]+)?\s*(?:秒|分钟|min|S|s)|(?:变色|断生|收汁|微黄|金黄|沸腾)[^，。；]{0,12})/);
+  if (!keyMatch) return undefined;
+  return `关键控制：${keyMatch[1]}`;
+}
+
 function withStepSourceTag(
   steps: RecipeResponse["steps"],
   sourceTag: "howtocook" | "web" | "llm" | "fallback",
@@ -64,37 +69,41 @@ function fallbackRecipe(
     { name: "生抽", amount: "8ml" },
   ];
 
+  const fallbackSteps = [
+    {
+      stepNo: 1,
+      instruction: `${primary} 清洗后切成均匀小块，${secondary} 处理备用。`,
+      sourceTag: "fallback" as const,
+    },
+    {
+      stepNo: 2,
+      instruction: "热锅后加入食用油，中火加热至微微起纹。",
+      sourceTag: "fallback" as const,
+    },
+    {
+      stepNo: 3,
+      instruction: `先下 ${primary} 快炒，再加入 ${secondary} 翻炒 2-3 分钟。`,
+      sourceTag: "fallback" as const,
+    },
+    {
+      stepNo: 4,
+      instruction: "加入盐和生抽调味，翻炒至断生后出锅。",
+      sourceTag: "fallback" as const,
+    },
+  ].map((step) => {
+    const keyPoint = inferKeyPoint(step.instruction);
+    return {
+      ...step,
+      ...(keyPoint ? { keyPoint } : {}),
+    };
+  });
+
   return {
     dishName,
     servings: "2人份",
     requiredIngredients,
     missingIngredients: computeMissingIngredients(requiredIngredients, ownedIngredients),
-    steps: [
-      {
-        stepNo: 1,
-        instruction: `${primary} 清洗后切成均匀小块，${secondary} 处理备用。`,
-        keyPoint: "食材大小尽量一致，后续受热更均匀。",
-        sourceTag: "fallback",
-      },
-      {
-        stepNo: 2,
-        instruction: "热锅后加入食用油，中火加热至微微起纹。",
-        keyPoint: "油温约 150-160°C 下主料，避免粘锅。",
-        sourceTag: "fallback",
-      },
-      {
-        stepNo: 3,
-        instruction: `先下 ${primary} 快炒，再加入 ${secondary} 翻炒 2-3 分钟。`,
-        keyPoint: "保持中火持续翻动，避免局部焦糊。",
-        sourceTag: "fallback",
-      },
-      {
-        stepNo: 4,
-        instruction: "加入盐和生抽调味，翻炒至断生后出锅。",
-        keyPoint: "调味后再炒 30-60 秒，让味道附着。",
-        sourceTag: "fallback",
-      },
-    ],
+    steps: fallbackSteps,
     tips: ["如口味偏清淡，可将生抽减至 5ml。", "可加 20ml 清水焖 1 分钟提升融合度。"],
     sourceType: "fallback",
     webReferences,
@@ -104,52 +113,63 @@ function fallbackRecipe(
   };
 }
 
+function normalizeHeadingLine(line: string): string {
+  return line
+    .replace(/^\s*#{1,6}\s*/u, "")
+    .replace(/\u3000/g, " ")
+    .trim();
+}
+
 function parseSection(content: string, header: string, nextHeaders: string[]): string[] {
   const lines = content.split("\n");
-  const startIndex = lines.findIndex((line) => line.trim() === header);
+  const normalizedHeader = header.trim();
+  const normalizedNext = new Set(nextHeaders.map((item) => item.trim()));
+
+  const startIndex = lines.findIndex((line) => normalizeHeadingLine(line) === normalizedHeader);
   if (startIndex < 0) return [];
+
   let endIndex = lines.length;
   for (let i = startIndex + 1; i < lines.length; i += 1) {
-    const trimmed = lines[i].trim();
-    if (nextHeaders.includes(trimmed)) {
+    const normalized = normalizeHeadingLine(lines[i]);
+    if (normalizedNext.has(normalized)) {
       endIndex = i;
       break;
     }
   }
+
   return lines.slice(startIndex + 1, endIndex);
 }
 
-function parseHowToCookIngredients(doc: HowToCookDoc, ownedIngredients: string[]): RecipeResponse["requiredIngredients"] {
+function parseHowToCookIngredients(doc: HowToCookDoc): RecipeResponse["requiredIngredients"] {
   const section = parseSection(doc.content, "必备原料和工具", ["计算", "操作", "附加内容"]);
   const named = section
-    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .map((line) => line.trim().replace(/^[-*]\s*/, "").replace(/^\d+\.\s*/, ""))
     .filter((line) => Boolean(line) && !line.includes("WARNING"))
-    .slice(0, 8)
     .map((name) => ({ name, amount: "适量" }));
+  if (named.length) return named;
 
-  const owned = ownedIngredients.slice(0, 6).map((name) => ({ name, amount: "按现有库存" }));
-  const merged = [...owned];
-  for (const item of named) {
-    if (!merged.find((x) => x.name === item.name)) {
-      merged.push(item);
-    }
-  }
-
-  return merged.length ? merged : owned;
+  // HowToCook 原文偶发缺失原料段时，使用最小可用食材兜底，不注入用户已有食材。
+  return [
+    { name: "主料", amount: "适量" },
+    { name: "食用油", amount: "适量" },
+    { name: "盐", amount: "适量" },
+  ];
 }
 
 function parseHowToCookSteps(doc: HowToCookDoc): RecipeResponse["steps"] {
   const section = parseSection(doc.content, "操作", ["附加内容"]);
   const lines = section
-    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
-    .filter((line) => Boolean(line) && !line.endsWith("步骤"));
+    .map((line) => line.trim())
+    .filter((line) => Boolean(line) && !line.endsWith("步骤"))
+    .map((line) => line.replace(/^[-*]\s*/, "").replace(/^\d+\.\s*/, "").trim())
+    .filter(Boolean);
 
-  const steps = lines.slice(0, 8).map((instruction, idx) => {
-    const keyMatch = instruction.match(/((?:大火|中火|中小火|小火)[^，。；]{0,16}|[0-9]+(?:-[0-9]+)?\s*(?:秒|分钟|min|S|s))/);
+  const steps = lines.map((instruction, idx) => {
+    const keyPoint = inferKeyPoint(instruction);
     return {
       stepNo: idx + 1,
       instruction,
-      keyPoint: keyMatch ? `关键控制：${keyMatch[1]}` : "关键控制：按原文节奏执行，注意火候与时间。",
+      ...(keyPoint ? { keyPoint } : {}),
       sourceTag: "howtocook" as const,
     };
   });
@@ -159,7 +179,6 @@ function parseHowToCookSteps(doc: HowToCookDoc): RecipeResponse["steps"] {
     {
       stepNo: 1,
       instruction: "按 HowToCook 原文完成备菜、烹饪与调味流程。",
-      keyPoint: "关键控制：先备齐原料，再按火候与时长执行。",
       sourceTag: "howtocook",
     },
   ];
@@ -184,7 +203,7 @@ async function buildRecipeFromHowToCookDoc(
   const doc = await getHowToCookDocByPath(primary.path);
   if (!doc) return null;
 
-  const requiredIngredients = parseHowToCookIngredients(doc, ownedIngredients);
+  const requiredIngredients = parseHowToCookIngredients(doc);
   const missingIngredients = computeMissingIngredients(requiredIngredients, ownedIngredients);
   const steps = parseHowToCookSteps(doc);
   const tips = parseHowToCookTips(doc);
@@ -209,6 +228,11 @@ async function resolveHowToCookReferences(
   ownedIngredients: string[],
   opts?: { sourceHintPath?: string; sourceHintType?: "howtocook" | "llm" },
 ): Promise<HowToCookReference[]> {
+  // Follow recommendation source strictly: when hint is llm, do not auto-upgrade to HowToCook.
+  if (opts?.sourceHintType === "llm") {
+    return [];
+  }
+
   if (opts?.sourceHintType === "howtocook" && opts.sourceHintPath) {
     const byPath = await getHowToCookReferenceByPath(opts.sourceHintPath);
     if (byPath) return [byPath];
@@ -230,33 +254,11 @@ export async function generateRecipeDetail(
   const references = await resolveHowToCookReferences(dishName, ownedIngredients, opts);
 
   if (references.length) {
-    const ragContext = buildHowToCookContext(references);
-    try {
-      const raw = await callJsonModel<unknown>({
-        system: `${SYSTEM_PROMPT_BASE}\n${SYSTEM_PROMPT_RECIPE}`,
-        user: `${buildRecipeUserPrompt(dishName, ownedIngredients)}\n\n【HowToCook参考片段】\n${ragContext}`,
-        responseTemplate: template,
-        retries: 1,
-      });
-
-      const parsed = recipeResponseSchema.parse(raw);
-      const correctedMissing = computeMissingIngredients(parsed.requiredIngredients, ownedIngredients);
-
-      return {
-        ...parsed,
-        missingIngredients: correctedMissing,
-        steps: withStepSourceTag(parsed.steps, "howtocook"),
-        sourceType: "howtocook",
-        referenceSources: references,
-        fallbackUsed: false,
-      };
-    } catch {
-      const fromHowToCook = await buildRecipeFromHowToCookDoc(dishName, ownedIngredients, references);
-      if (fromHowToCook) {
-        return fromHowToCook;
-      }
-      return fallbackRecipe(dishName, ownedIngredients, references);
+    const fromHowToCook = await buildRecipeFromHowToCookDoc(dishName, ownedIngredients, references);
+    if (fromHowToCook) {
+      return fromHowToCook;
     }
+    return fallbackRecipe(dishName, ownedIngredients, references);
   }
 
   const webSearchSystemPrompt = `${SYSTEM_PROMPT_BASE}

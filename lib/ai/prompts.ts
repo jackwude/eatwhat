@@ -19,9 +19,12 @@ export const SYSTEM_PROMPT_RECOMMEND = `
 要求：
 - 输出 recommendations 数组，总数最多 3 道，可以少于 3 道。
 - 每道菜给出推荐理由、主要所需食材、预计时间、难度。
+- 每道菜尽量同时输出 recipePreview（简版详情：servings/requiredIngredients/steps/tips/timing）。
 - 难度仅允许 easy / medium / hard。
 - ID 使用 dish_easy_1 / dish_medium_1 / dish_hard_1 这类可读格式。
 - 若参考片段中有高度匹配的菜名/做法，优先推荐该方向。
+- 若菜品命中 HowToCook 语义相近做法，recipePreview 的步骤和关键点要与该来源一致，不得引入无关食材。
+- 若未命中 HowToCook，recipePreview 使用可执行家常步骤，并仅使用该菜相关食材。
 - 每条 reason 控制在 30 个汉字内。
 - 每道菜 requiredIngredients 最多 6 项。
 - 如确实无法推荐，返回 recommendations: []。
@@ -32,9 +35,19 @@ export const SYSTEM_PROMPT_RECIPE = `
 要求：
 - 先提供“所需总食材 requiredIngredients”。
 - 再提供“missingIngredients”（基于用户已有食材推断）。
-- 步骤最多 8 步，每步都必须有 keyPoint。
-- keyPoint 必须是可执行关键点（火候、时长、状态判断、常见失误规避）。
+- 步骤应完整覆盖来源菜谱的关键工序，不得无故删减关键步骤。
+- 仅在存在明确关键控制信息时提供 keyPoint（火候、时长、状态判断、常见失误规避）；没有就省略 keyPoint 字段。
 - 若参考片段中存在同名或高度相关菜谱，步骤顺序和关键火候需与参考保持一致或给出合理解释。
+`;
+
+export const SYSTEM_PROMPT_RECIPE_FILL = `
+任务：基于给定菜名和食材清单，补全“可直接执行”的烹饪工序。
+要求：
+- 只输出 JSON，不输出 markdown 或额外解释。
+- 只补全 steps/tips/timing，不要改 dishName，不要改 requiredIngredients。
+- 步骤 6-10 步优先，按可执行顺序输出。
+- 严禁引入不在 requiredIngredients 中的无关食材。
+- keyPoint 仅在存在明确火候/时长/状态判断时提供，没有则省略。
 `;
 
 export const SYSTEM_PROMPT_INGREDIENT_EXTRACT = `
@@ -58,4 +71,24 @@ export function buildRecipeUserPrompt(dishName: string, ownedIngredients: string
 
 export function buildIngredientExtractPrompt(inputText: string, rawCandidates: string[]) {
   return `用户原始输入：${inputText}\n候选词：${rawCandidates.join("、")}\n请提取可烹饪食材名。`;
+}
+
+export function buildRecipeFillPrompt(args: {
+  dishName: string;
+  requiredIngredients: Array<{ name: string; amount: string }>;
+  ownedIngredients: string[];
+  reason?: string;
+  estimatedTimeMin?: number;
+}) {
+  const required = args.requiredIngredients.map((item) => `${item.name}:${item.amount}`).join("、");
+  return [
+    `目标菜品：${args.dishName}`,
+    `菜谱所需食材：${required}`,
+    `用户已有食材：${args.ownedIngredients.join("、")}`,
+    args.reason ? `推荐理由：${args.reason}` : "",
+    args.estimatedTimeMin ? `预计总时长：${args.estimatedTimeMin} 分钟` : "",
+    "请补全 steps/tips/timing。",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

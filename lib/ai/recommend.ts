@@ -19,7 +19,15 @@ const template = `{
       "reason": "推荐理由（30字内）",
       "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
       "estimatedTimeMin": 20,
-      "difficulty": "easy"
+      "difficulty": "easy",
+      "recipePreview": {
+        "servings": "2人份",
+        "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
+        "steps": [{ "stepNo": 1, "instruction": "处理食材后开火烹饪" }],
+        "tips": ["关键火候以断生为准"],
+        "timing": { "prepMin": 8, "cookMin": 12, "totalMin": 20 },
+        "sourceType": "llm"
+      }
     },
     {
       "id": "dish_medium_1",
@@ -44,6 +52,8 @@ export type RecommendWithSources = RecommendResponse & {
   referenceSources: HowToCookReference[];
   noMatch?: boolean;
   noMatchMessage?: string;
+  recipePreviewByDishId?: Record<string, NonNullable<RecommendResponse["recommendations"][number]["recipePreview"]>>;
+  transientFailure?: boolean;
 };
 
 function normalizeDishText(input: string): string {
@@ -134,6 +144,16 @@ function normalizeRecommendationSet(input: RecommendResponse["recommendations"])
   return deduped;
 }
 
+function buildRecipePreviewMap(recommendations: RecommendResponse["recommendations"]) {
+  const map: Record<string, NonNullable<RecommendResponse["recommendations"][number]["recipePreview"]>> = {};
+  for (const item of recommendations) {
+    if (item.recipePreview) {
+      map[item.id] = item.recipePreview;
+    }
+  }
+  return Object.keys(map).length ? map : undefined;
+}
+
 export async function generateRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendWithSources> {
   const env = getEnv();
   const referencesForPrompt = await retrieveHowToCookReferences({
@@ -161,6 +181,7 @@ export async function generateRecommendations(inputText: string, ownedIngredient
         referenceSources: [],
         noMatch: true,
         noMatchMessage: NO_MATCH_MESSAGE,
+        recipePreviewByDishId: undefined,
       };
     }
 
@@ -171,6 +192,12 @@ export async function generateRecommendations(inputText: string, ownedIngredient
           return {
             recommendation: {
               ...item,
+              recipePreview: item.recipePreview
+                ? {
+                    ...item.recipePreview,
+                    sourceType: "llm" as const,
+                  }
+                : item.recipePreview,
               sourceType: "llm" as const,
             },
             reference: null,
@@ -179,7 +206,15 @@ export async function generateRecommendations(inputText: string, ownedIngredient
 
         return {
           recommendation: {
-            ...item,
+              ...item,
+              recipePreview: item.recipePreview
+                ? {
+                  ...item.recipePreview,
+                  sourceType: "howtocook" as const,
+                  sourcePath: hit.path,
+                  sourceTitle: hit.title,
+                }
+              : item.recipePreview,
             sourceType: "howtocook" as const,
             sourcePath: hit.path,
             sourceTitle: hit.title,
@@ -196,17 +231,23 @@ export async function generateRecommendations(inputText: string, ownedIngredient
       }
     }
 
+    const normalizedRecommendations = matched.map((item) => item.recommendation);
+
     return {
-      recommendations: matched.map((item) => item.recommendation),
+      recommendations: normalizedRecommendations,
       referenceSources: Array.from(referenceMap.values()),
       noMatch: false,
+      recipePreviewByDishId: buildRecipePreviewMap(normalizedRecommendations),
     };
-  } catch {
+  } catch (error) {
+    console.error("[recommend] generateRecommendations failed", error);
     return {
       recommendations: [],
       referenceSources: [],
       noMatch: true,
-      noMatchMessage: NO_MATCH_MESSAGE,
+      noMatchMessage: "推荐服务暂时不可用，请重试",
+      recipePreviewByDishId: undefined,
+      transientFailure: true,
     };
   }
 }
