@@ -12,6 +12,8 @@ type RecommendApiResponse = RecommendResponse & {
   normalizedOwnedIngredients?: string[];
   ingredientExtractSource?: IngredientExtractSource;
   ingredientExtractReason?: IngredientExtractReason;
+  noMatch?: boolean;
+  noMatchMessage?: string;
 };
 
 async function fetchRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendApiResponse> {
@@ -92,6 +94,12 @@ export function RecommendPageClient() {
 
       {query.data ? (
         <>
+          {(query.data.noMatch || !query.data.recommendations.length) && !query.isError ? (
+            <section className="glass-card mb-5 rounded-2xl p-5 text-sm text-[color:var(--muted)]">
+              {query.data.noMatchMessage || "当前没有匹配到菜谱"}
+            </section>
+          ) : null}
+
           {grouped?.easy.length ? (
             <section className="mb-5">
               <h2 className="mb-3 text-lg font-semibold text-[color:var(--royal-red)]">简 · 快手御膳</h2>

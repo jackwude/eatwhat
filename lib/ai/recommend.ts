@@ -8,38 +8,33 @@ import { getEnv } from "@/lib/utils/env";
 import { buildHowToCookContext, retrieveHowToCookReferences, type HowToCookReference } from "@/lib/rag/howtocook";
 import { recommendResponseSchema, type RecommendResponse } from "@/lib/schemas/recommend.schema";
 
+const NO_MATCH_MESSAGE = "当前没有匹配到菜谱";
+const MATCH_THRESHOLD = 0.72;
+
 const template = `{
   "recommendations": [
     {
       "id": "dish_easy_1",
-      "name": "快手菜名",
-      "reason": "推荐理由（简单级）",
+      "name": "家常菜名",
+      "reason": "推荐理由（30字内）",
       "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
-      "estimatedTimeMin": 15,
-      "difficulty": "easy"
-    },
-    {
-      "id": "dish_easy_2",
-      "name": "快手菜名2",
-      "reason": "推荐理由（简单级）",
-      "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
-      "estimatedTimeMin": 18,
+      "estimatedTimeMin": 20,
       "difficulty": "easy"
     },
     {
       "id": "dish_medium_1",
-      "name": "家常菜名",
-      "reason": "推荐理由（中等级）",
+      "name": "家常菜名2",
+      "reason": "推荐理由（30字内）",
       "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
-      "estimatedTimeMin": 20,
+      "estimatedTimeMin": 35,
       "difficulty": "medium"
     },
     {
       "id": "dish_hard_1",
       "name": "进阶菜名",
-      "reason": "推荐理由（进阶级）",
+      "reason": "推荐理由（30字内）",
       "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
-      "estimatedTimeMin": 25,
+      "estimatedTimeMin": 50,
       "difficulty": "hard"
     }
   ]
@@ -47,133 +42,106 @@ const template = `{
 
 export type RecommendWithSources = RecommendResponse & {
   referenceSources: HowToCookReference[];
-  fallbackUsed?: boolean;
+  noMatch?: boolean;
+  noMatchMessage?: string;
 };
 
-function attachRecipeSource(
-  recommendations: RecommendResponse["recommendations"],
-  refs: HowToCookReference[],
-): RecommendResponse["recommendations"] {
-  return recommendations.map((item) => {
-    const dishNorm = item.name.replace(/\s+/g, "").toLowerCase();
-    const hit = refs.find((ref) => {
-      const titleNorm = ref.title.replace(/\s+/g, "").toLowerCase();
-      return titleNorm.includes(dishNorm) || dishNorm.includes(titleNorm);
-    });
-    if (!hit) {
-      return {
-        ...item,
-        sourceType: "llm" as const,
-      };
-    }
-    return {
-      ...item,
-      sourceType: "howtocook" as const,
-      sourcePath: hit.path,
-      sourceTitle: hit.title,
-    };
+function normalizeDishText(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[\s\t\r\n]+/g, "")
+    .replace(/[，,。；;：:()（）【】\[\]"'“”‘’·]/g, "")
+    .replace(/番茄/g, "西红柿")
+    .replace(/猪肉丝/g, "肉丝")
+    .replace(/牛肉丝/g, "肉丝")
+    .replace(/^(家常|快手|经典|私房|简易|简化版|风味|改良版)/, "")
+    .replace(/(做法|家常版|简化版|风味版)$/g, "");
+}
+
+function toBigrams(value: string): Set<string> {
+  if (value.length <= 2) return new Set([value]);
+  const grams = new Set<string>();
+  for (let i = 0; i < value.length - 1; i += 1) {
+    grams.add(value.slice(i, i + 2));
+  }
+  return grams;
+}
+
+function jaccardSimilarity(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const leftSet = toBigrams(left);
+  const rightSet = toBigrams(right);
+  let intersection = 0;
+  for (const gram of leftSet) {
+    if (rightSet.has(gram)) intersection += 1;
+  }
+  const union = leftSet.size + rightSet.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function scoreTitleMatch(dishName: string, refTitle: string): number {
+  const dish = normalizeDishText(dishName);
+  const title = normalizeDishText(refTitle);
+  if (!dish || !title) return 0;
+  if (dish === title) return 1;
+  if (title.includes(dish) || dish.includes(title)) return 0.88;
+  return jaccardSimilarity(dish, title);
+}
+
+async function matchHowToCookReference(
+  dishName: string,
+  inputText: string,
+  ownedIngredients: string[],
+): Promise<HowToCookReference | null> {
+  const candidates = await retrieveHowToCookReferences({
+    dishName,
+    inputText,
+    ownedIngredients,
+    limit: 8,
   });
-}
 
-function fallbackRecommendations(ownedIngredients: string[]): RecommendWithSources {
-  const hasEgg = ownedIngredients.some((i) => i.includes("蛋"));
-  const hasTofu = ownedIngredients.some((i) => i.includes("豆腐"));
-  const hasTomato = ownedIngredients.some((i) => i.includes("西红柿") || i.includes("番茄"));
-  const base = [
-    {
-      id: "dish_easy_1",
-      name: hasTomato && hasEgg ? "番茄炒蛋" : hasTofu ? "家常烧豆腐" : "清炒时蔬",
-      reason: "基于现有主食材快速完成",
-      requiredIngredients: [
-        { name: ownedIngredients[0] || "主食材", amount: "300g" },
-        { name: "食用油", amount: "15ml" },
-      ],
-      estimatedTimeMin: 15,
-      difficulty: "easy" as const,
-      sourceType: "llm" as const,
-    },
-    {
-      id: "dish_easy_2",
-      name: hasTofu && hasEgg ? "鸡蛋豆腐煲" : "葱香煎蛋",
-      reason: "调味简单，成功率高",
-      requiredIngredients: [
-        { name: hasEgg ? "鸡蛋" : ownedIngredients[0] || "主食材", amount: hasEgg ? "3个" : "300g" },
-        { name: "小葱", amount: "20g" },
-      ],
-      estimatedTimeMin: 20,
-      difficulty: "easy" as const,
-      sourceType: "llm" as const,
-    },
-    {
-      id: "dish_medium_1",
-      name: "快手汤羹",
-      reason: "补充汤水，搭配均衡",
-      requiredIngredients: [
-        { name: hasTofu ? "豆腐" : ownedIngredients[1] || "辅料", amount: "200g" },
-        { name: "盐", amount: "2g" },
-      ],
-      estimatedTimeMin: 18,
-      difficulty: "medium" as const,
-      sourceType: "llm" as const,
-    },
-    {
-      id: "dish_medium_2",
-      name: hasTofu ? "红烧豆腐" : "小炒肉片",
-      reason: "中等火候，风味更足",
-      requiredIngredients: [
-        { name: hasTofu ? "豆腐" : "猪里脊", amount: "250g" },
-        { name: "生抽", amount: "10ml" },
-      ],
-      estimatedTimeMin: 28,
-      difficulty: "medium" as const,
-      sourceType: "llm" as const,
-    },
-    {
-      id: "dish_hard_1",
-      name: "宫保风味小炒",
-      reason: "调味层次更丰富",
-      requiredIngredients: [
-        { name: ownedIngredients[0] || "主食材", amount: "300g" },
-        { name: "花椒", amount: "2g" },
-      ],
-      estimatedTimeMin: 35,
-      difficulty: "hard" as const,
-      sourceType: "llm" as const,
-    },
-  ];
+  if (!candidates.length) return null;
 
-  return {
-    recommendations: base,
-    referenceSources: [],
-    fallbackUsed: true,
-  };
-}
-
-function limitByDifficulty(input: RecommendResponse["recommendations"]): RecommendResponse["recommendations"] {
-  const buckets = {
-    easy: [] as RecommendResponse["recommendations"],
-    medium: [] as RecommendResponse["recommendations"],
-    hard: [] as RecommendResponse["recommendations"],
-  };
-
-  for (const item of input) {
-    if (buckets[item.difficulty].length < 3) {
-      buckets[item.difficulty].push(item);
+  let best: { ref: HowToCookReference; score: number } | null = null;
+  for (const ref of candidates) {
+    const score = scoreTitleMatch(dishName, ref.title);
+    if (!best || score > best.score) {
+      best = { ref, score };
     }
   }
 
-  return [...buckets.easy, ...buckets.medium, ...buckets.hard];
+  if (!best || best.score < MATCH_THRESHOLD) return null;
+
+  return {
+    ...best.ref,
+    score: Math.max(best.ref.score, Math.round(best.score * 100)),
+  };
+}
+
+function normalizeRecommendationSet(input: RecommendResponse["recommendations"]): RecommendResponse["recommendations"] {
+  const seen = new Set<string>();
+  const deduped: RecommendResponse["recommendations"] = [];
+
+  for (const item of input) {
+    const key = normalizeDishText(item.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+    if (deduped.length >= 3) break;
+  }
+
+  return deduped;
 }
 
 export async function generateRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendWithSources> {
   const env = getEnv();
-  const references = await retrieveHowToCookReferences({
+  const referencesForPrompt = await retrieveHowToCookReferences({
     inputText,
     ownedIngredients,
     limit: 3,
   });
-
-  const ragContext = buildHowToCookContext(references);
+  const ragContext = buildHowToCookContext(referencesForPrompt);
 
   try {
     const raw = await callJsonModel<unknown>({
@@ -185,15 +153,60 @@ export async function generateRecommendations(inputText: string, ownedIngredient
     });
 
     const parsed = recommendResponseSchema.parse(raw);
-    const normalized = limitByDifficulty(parsed.recommendations);
-    const withSource = attachRecipeSource(normalized, references);
+    const recommendations = normalizeRecommendationSet(parsed.recommendations);
+
+    if (!recommendations.length) {
+      return {
+        recommendations: [],
+        referenceSources: [],
+        noMatch: true,
+        noMatchMessage: NO_MATCH_MESSAGE,
+      };
+    }
+
+    const matched = await Promise.all(
+      recommendations.map(async (item) => {
+        const hit = await matchHowToCookReference(item.name, inputText, ownedIngredients);
+        if (!hit) {
+          return {
+            recommendation: {
+              ...item,
+              sourceType: "llm" as const,
+            },
+            reference: null,
+          };
+        }
+
+        return {
+          recommendation: {
+            ...item,
+            sourceType: "howtocook" as const,
+            sourcePath: hit.path,
+            sourceTitle: hit.title,
+          },
+          reference: hit,
+        };
+      }),
+    );
+
+    const referenceMap = new Map<string, HowToCookReference>();
+    for (const item of matched) {
+      if (item.reference) {
+        referenceMap.set(item.reference.path, item.reference);
+      }
+    }
 
     return {
-      recommendations: withSource,
-      referenceSources: references,
-      fallbackUsed: false,
+      recommendations: matched.map((item) => item.recommendation),
+      referenceSources: Array.from(referenceMap.values()),
+      noMatch: false,
     };
   } catch {
-    return fallbackRecommendations(ownedIngredients);
+    return {
+      recommendations: [],
+      referenceSources: [],
+      noMatch: true,
+      noMatchMessage: NO_MATCH_MESSAGE,
+    };
   }
 }

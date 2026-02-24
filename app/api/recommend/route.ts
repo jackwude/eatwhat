@@ -4,7 +4,7 @@ import { generateRecommendations, type RecommendWithSources } from "@/lib/ai/rec
 import { recommendRequestSchema } from "@/lib/schemas/recommend.schema";
 import { getEnv } from "@/lib/utils/env";
 import { sha256 } from "@/lib/utils/hash";
-import { retrieveHowToCookReferences } from "@/lib/rag/howtocook";
+import type { HowToCookReference } from "@/lib/rag/howtocook";
 import { extractOwnedIngredientsWithReason, type IngredientExtractReason, type IngredientExtractResult } from "@/lib/ai/ingredient-extractor";
 import { readExtractCache, writeExtractCache } from "@/lib/cache/extract-cache";
 
@@ -53,6 +53,20 @@ function writeCache(key: string, value: RecommendWithSources) {
 
 function isRecommendationArray(value: unknown): value is RecommendWithSources["recommendations"] {
   return Array.isArray(value);
+}
+
+function toReferenceSources(recommendations: RecommendWithSources["recommendations"]): HowToCookReference[] {
+  const refs = recommendations
+    .filter((item) => item.sourceType === "howtocook" && item.sourcePath && item.sourceTitle)
+    .map((item) => ({
+      title: item.sourceTitle as string,
+      path: item.sourcePath as string,
+      score: 100,
+      excerpt: "",
+    }));
+  const unique = new Map<string, HowToCookReference>();
+  for (const ref of refs) unique.set(ref.path, ref);
+  return Array.from(unique.values());
 }
 
 async function persistRecommendHistory(
@@ -124,18 +138,11 @@ export async function POST(req: Request) {
 
     const dbCached = await findCachedRecommendationByHash(requestHash);
     if (dbCached && isRecommendationArray(dbCached.recommendations)) {
-      const dbInputText = dbCached.inputText || parsed.inputText;
-      const dbOwnedIngredients = Array.isArray(dbCached.ownedIngredients)
-        ? dbCached.ownedIngredients.map((item) => String(item)).filter(Boolean)
-        : ownedIngredients;
-      const referenceSources = await retrieveHowToCookReferences({
-        inputText: dbInputText,
-        ownedIngredients: dbOwnedIngredients,
-        limit: 3,
-      });
       const value: RecommendWithSources = {
         recommendations: dbCached.recommendations,
-        referenceSources,
+        referenceSources: toReferenceSources(dbCached.recommendations),
+        noMatch: dbCached.recommendations.length === 0,
+        noMatchMessage: dbCached.recommendations.length === 0 ? "当前没有匹配到菜谱" : undefined,
       };
       writeCache(key, value);
       await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, value.recommendations);

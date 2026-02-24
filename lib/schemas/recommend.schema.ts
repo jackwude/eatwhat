@@ -18,7 +18,9 @@ export const recommendationSchema = z.object({
 });
 
 export const recommendResponseSchema = z.object({
-  recommendations: z.array(recommendationSchema).min(1).max(9),
+  recommendations: z.array(recommendationSchema).min(0).max(9),
+  noMatch: z.boolean().optional(),
+  noMatchMessage: z.string().min(1).optional(),
 });
 
 export const recommendRequestSchema = z.object({
