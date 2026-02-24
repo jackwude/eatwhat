@@ -229,10 +229,10 @@ export async function generateRecommendations(inputText: string, ownedIngredient
       system: `${SYSTEM_PROMPT_BASE}\n${SYSTEM_PROMPT_RECOMMEND}`,
       user: `${buildRecommendUserPrompt(inputText, ownedIngredients)}\n\n【HowToCook参考片段】\n${ragContext}`,
       responseTemplate: usePreviewTemplate ? template : liteTemplate,
-      retries: 1,
+      retries: 0,
       model: env.OPENAI_RECOMMEND_MODEL || env.OPENAI_MODEL,
-      maxOutputTokens: usePreviewTemplate ? 1800 : 1000,
-      timeoutMs: usePreviewTemplate ? 22000 : 14000,
+      maxOutputTokens: usePreviewTemplate ? 1500 : 900,
+      timeoutMs: usePreviewTemplate ? 12000 : 8000,
     });
     return recommendResponseSchema.parse(raw);
   }
