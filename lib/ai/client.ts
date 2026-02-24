@@ -3,6 +3,19 @@ import { getEnv } from "@/lib/utils/env";
 
 let client: OpenAI | null = null;
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`LLM request timeout after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function getClient(): OpenAI {
   if (client) return client;
 
@@ -131,36 +144,49 @@ async function callByResponsesAPI(
   model: string,
   tools?: Array<Record<string, unknown>>,
   maxOutputTokens?: number,
+  timeoutMs?: number,
 ): Promise<unknown> {
-  return getClient().responses.create({
-    model,
-    input: [
-      {
-        role: "system",
-        content: [{ type: "input_text", text: system }],
-      },
-      {
-        role: "user",
-        content: [{ type: "input_text", text: user }],
-      },
-    ],
-    ...(tools?.length ? { tools: tools as never } : {}),
-    temperature: 0.4,
-    max_output_tokens: maxOutputTokens ?? 900,
-  });
+  return withTimeout(
+    getClient().responses.create({
+      model,
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: system }],
+        },
+        {
+          role: "user",
+          content: [{ type: "input_text", text: user }],
+        },
+      ],
+      ...(tools?.length ? { tools: tools as never } : {}),
+      temperature: 0.4,
+      max_output_tokens: maxOutputTokens ?? 900,
+    }),
+    timeoutMs ?? 30000,
+  );
 }
 
-async function callByChatAPI(system: string, user: string, model: string, maxOutputTokens?: number): Promise<string> {
-  const completion = await getClient().chat.completions.create({
-    model,
-    temperature: 0.4,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: maxOutputTokens ?? 900,
-  });
+async function callByChatAPI(
+  system: string,
+  user: string,
+  model: string,
+  maxOutputTokens?: number,
+  timeoutMs?: number,
+): Promise<string> {
+  const completion = await withTimeout(
+    getClient().chat.completions.create({
+      model,
+      temperature: 0.4,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: maxOutputTokens ?? 900,
+    }),
+    timeoutMs ?? 30000,
+  );
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
@@ -178,6 +204,7 @@ export async function callJsonModel<T>(args: {
   model?: string;
   responsesTools?: Array<Record<string, unknown>>;
   maxOutputTokens?: number;
+  timeoutMs?: number;
 }): Promise<T> {
   const env = getEnv();
   const retries = args.retries ?? 1;
@@ -189,8 +216,8 @@ export async function callJsonModel<T>(args: {
     try {
       const payload =
         env.OPENAI_API_STYLE === "responses"
-          ? await callByResponsesAPI(systemPrompt, args.user, model, args.responsesTools, args.maxOutputTokens)
-          : await callByChatAPI(systemPrompt, args.user, model, args.maxOutputTokens);
+          ? await callByResponsesAPI(systemPrompt, args.user, model, args.responsesTools, args.maxOutputTokens, args.timeoutMs)
+          : await callByChatAPI(systemPrompt, args.user, model, args.maxOutputTokens, args.timeoutMs);
 
       return tryParsePayloadToJsonObject(payload, expectedKeys) as T;
     } catch (error) {

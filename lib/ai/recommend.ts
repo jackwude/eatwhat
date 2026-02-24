@@ -5,7 +5,7 @@ import {
   SYSTEM_PROMPT_RECOMMEND,
 } from "@/lib/ai/prompts";
 import { getEnv } from "@/lib/utils/env";
-import { buildHowToCookContext, retrieveHowToCookReferences, type HowToCookReference } from "@/lib/rag/howtocook";
+import { buildHowToCookContext, getHowToCookDocByPath, retrieveHowToCookReferences, type HowToCookReference } from "@/lib/rag/howtocook";
 import { recommendResponseSchema, type RecommendResponse } from "@/lib/schemas/recommend.schema";
 
 const NO_MATCH_MESSAGE = "当前没有匹配到菜谱";
@@ -167,6 +167,54 @@ function buildRecipePreviewMap(recommendations: RecommendResponse["recommendatio
   return Object.keys(map).length ? map : undefined;
 }
 
+async function buildHowToCookSafeFallback(
+  references: HowToCookReference[],
+): Promise<Pick<RecommendWithSources, "recommendations" | "referenceSources" | "recipePreviewByDishId"> | null> {
+  const topRefs = references.slice(0, 3);
+  if (!topRefs.length) return null;
+
+  const difficulties: Array<"easy" | "medium" | "hard"> = ["easy", "medium", "hard"];
+  const recommendations: RecommendResponse["recommendations"] = [];
+  for (let i = 0; i < topRefs.length; i += 1) {
+    const ref = topRefs[i];
+    const doc = await getHowToCookDocByPath(ref.path);
+    if (!doc) continue;
+    const requiredIngredients = doc.ingredients.slice(0, 6).map((name) => ({ name, amount: "适量" }));
+    const steps = doc.operations.slice(0, 6).map((instruction, idx) => ({
+      stepNo: idx + 1,
+      instruction,
+    }));
+    recommendations.push({
+      id: `dish_${difficulties[Math.min(i, 2)]}_${i + 1}`,
+      name: ref.title,
+      reason: "命中 HowToCook 典籍，可稳定复现。",
+      requiredIngredients: requiredIngredients.length ? requiredIngredients : [{ name: ref.title, amount: "适量" }],
+      estimatedTimeMin: 20 + i * 8,
+      difficulty: difficulties[Math.min(i, 2)],
+      sourceType: "howtocook",
+      sourcePath: ref.path,
+      sourceTitle: ref.title,
+      recipePreview: {
+        servings: "2人份",
+        requiredIngredients: requiredIngredients.length ? requiredIngredients : [{ name: ref.title, amount: "适量" }],
+        steps,
+        tips: ["优先按 HowToCook 原文火候与节奏执行。"],
+        timing: { prepMin: 8, cookMin: 12, totalMin: 20 + i * 8 },
+        sourceType: "howtocook",
+        sourcePath: ref.path,
+        sourceTitle: ref.title,
+      },
+    });
+  }
+
+  if (!recommendations.length) return null;
+  return {
+    recommendations,
+    referenceSources: topRefs,
+    recipePreviewByDishId: buildRecipePreviewMap(recommendations),
+  };
+}
+
 export async function generateRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendWithSources> {
   const env = getEnv();
   const referencesForPrompt = await retrieveHowToCookReferences({
@@ -184,6 +232,7 @@ export async function generateRecommendations(inputText: string, ownedIngredient
       retries: 1,
       model: env.OPENAI_RECOMMEND_MODEL || env.OPENAI_MODEL,
       maxOutputTokens: usePreviewTemplate ? 1800 : 1000,
+      timeoutMs: usePreviewTemplate ? 22000 : 14000,
     });
     return recommendResponseSchema.parse(raw);
   }
@@ -265,6 +314,13 @@ export async function generateRecommendations(inputText: string, ownedIngredient
     };
   } catch (error) {
     console.error("[recommend] generateRecommendations failed", error);
+    const safeFallback = await buildHowToCookSafeFallback(referencesForPrompt);
+    if (safeFallback) {
+      return {
+        ...safeFallback,
+        noMatch: false,
+      };
+    }
     return {
       recommendations: [],
       referenceSources: [],
