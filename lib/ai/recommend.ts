@@ -48,6 +48,19 @@ const template = `{
   ]
 }`;
 
+const liteTemplate = `{
+  "recommendations": [
+    {
+      "id": "dish_easy_1",
+      "name": "家常菜名",
+      "reason": "推荐理由（30字内）",
+      "requiredIngredients": [{ "name": "食材", "amount": "100g" }],
+      "estimatedTimeMin": 20,
+      "difficulty": "easy"
+    }
+  ]
+}`;
+
 export type RecommendWithSources = RecommendResponse & {
   referenceSources: HowToCookReference[];
   noMatch?: boolean;
@@ -163,16 +176,27 @@ export async function generateRecommendations(inputText: string, ownedIngredient
   });
   const ragContext = buildHowToCookContext(referencesForPrompt);
 
-  try {
+  async function runRecommendCall(usePreviewTemplate: boolean): Promise<RecommendResponse> {
     const raw = await callJsonModel<unknown>({
       system: `${SYSTEM_PROMPT_BASE}\n${SYSTEM_PROMPT_RECOMMEND}`,
       user: `${buildRecommendUserPrompt(inputText, ownedIngredients)}\n\n【HowToCook参考片段】\n${ragContext}`,
-      responseTemplate: template,
+      responseTemplate: usePreviewTemplate ? template : liteTemplate,
       retries: 1,
       model: env.OPENAI_RECOMMEND_MODEL || env.OPENAI_MODEL,
+      maxOutputTokens: usePreviewTemplate ? 1800 : 1000,
     });
+    return recommendResponseSchema.parse(raw);
+  }
 
-    const parsed = recommendResponseSchema.parse(raw);
+  try {
+    let parsed: RecommendResponse;
+    try {
+      parsed = await runRecommendCall(true);
+    } catch (firstError) {
+      console.warn("[recommend] preview-rich response failed, fallback to lite response", firstError);
+      parsed = await runRecommendCall(false);
+    }
+
     const recommendations = normalizeRecommendationSet(parsed.recommendations);
 
     if (!recommendations.length) {

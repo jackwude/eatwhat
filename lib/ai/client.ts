@@ -130,6 +130,7 @@ async function callByResponsesAPI(
   user: string,
   model: string,
   tools?: Array<Record<string, unknown>>,
+  maxOutputTokens?: number,
 ): Promise<unknown> {
   return getClient().responses.create({
     model,
@@ -145,11 +146,11 @@ async function callByResponsesAPI(
     ],
     ...(tools?.length ? { tools: tools as never } : {}),
     temperature: 0.4,
-    max_output_tokens: 900,
+    max_output_tokens: maxOutputTokens ?? 900,
   });
 }
 
-async function callByChatAPI(system: string, user: string, model: string): Promise<string> {
+async function callByChatAPI(system: string, user: string, model: string, maxOutputTokens?: number): Promise<string> {
   const completion = await getClient().chat.completions.create({
     model,
     temperature: 0.4,
@@ -158,7 +159,7 @@ async function callByChatAPI(system: string, user: string, model: string): Promi
       { role: "user", content: user },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 900,
+    max_tokens: maxOutputTokens ?? 900,
   });
 
   const content = completion.choices[0]?.message?.content;
@@ -176,6 +177,7 @@ export async function callJsonModel<T>(args: {
   retries?: number;
   model?: string;
   responsesTools?: Array<Record<string, unknown>>;
+  maxOutputTokens?: number;
 }): Promise<T> {
   const env = getEnv();
   const retries = args.retries ?? 1;
@@ -187,8 +189,8 @@ export async function callJsonModel<T>(args: {
     try {
       const payload =
         env.OPENAI_API_STYLE === "responses"
-          ? await callByResponsesAPI(systemPrompt, args.user, model, args.responsesTools)
-          : await callByChatAPI(systemPrompt, args.user, model);
+          ? await callByResponsesAPI(systemPrompt, args.user, model, args.responsesTools, args.maxOutputTokens)
+          : await callByChatAPI(systemPrompt, args.user, model, args.maxOutputTokens);
 
       return tryParsePayloadToJsonObject(payload, expectedKeys) as T;
     } catch (error) {
