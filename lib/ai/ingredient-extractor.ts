@@ -13,7 +13,7 @@ export type IngredientExtractResult = {
   rawCandidates: string[];
 };
 
-export type IngredientExtractReason = "llm_success" | "breaker_open" | "llm_failed_fallback";
+export type IngredientExtractReason = "llm_success" | "breaker_open" | "llm_failed_fallback" | "cache_reuse";
 
 const BREAKER_THRESHOLD = 5;
 const BREAKER_COOLDOWN_MS = 1000 * 60 * 10;

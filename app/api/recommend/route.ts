@@ -4,7 +4,7 @@ import { generateRecommendations, type RecommendWithSources } from "@/lib/ai/rec
 import { recommendRequestSchema } from "@/lib/schemas/recommend.schema";
 import { getEnv } from "@/lib/utils/env";
 import { sha256 } from "@/lib/utils/hash";
-import { retrieveHowToCookReferences } from "@/lib/rag/howtocook";
+import type { HowToCookReference } from "@/lib/rag/howtocook";
 import { extractOwnedIngredientsWithReason, type IngredientExtractReason, type IngredientExtractResult } from "@/lib/ai/ingredient-extractor";
 import { readExtractCache, writeExtractCache } from "@/lib/cache/extract-cache";
 
@@ -55,6 +55,32 @@ function isRecommendationArray(value: unknown): value is RecommendWithSources["r
   return Array.isArray(value);
 }
 
+function toReferenceSources(recommendations: RecommendWithSources["recommendations"]): HowToCookReference[] {
+  const refs = recommendations
+    .filter((item) => item.sourceType === "howtocook" && item.sourcePath && item.sourceTitle)
+    .map((item) => ({
+      title: item.sourceTitle as string,
+      path: item.sourcePath as string,
+      score: 100,
+      excerpt: "",
+    }));
+  const unique = new Map<string, HowToCookReference>();
+  for (const ref of refs) unique.set(ref.path, ref);
+  return Array.from(unique.values());
+}
+
+function toRecipePreviewByDishId(
+  recommendations: RecommendWithSources["recommendations"],
+): RecommendWithSources["recipePreviewByDishId"] {
+  const map: NonNullable<RecommendWithSources["recipePreviewByDishId"]> = {};
+  for (const item of recommendations) {
+    if (item.recipePreview) {
+      map[item.id] = item.recipePreview;
+    }
+  }
+  return Object.keys(map).length ? map : undefined;
+}
+
 async function persistRecommendHistory(
   inputText: string,
   ownedIngredients: string[],
@@ -93,7 +119,7 @@ export async function POST(req: Request) {
           source: "fallback_rule",
           rawCandidates: dbOwnedIngredients,
         };
-        ingredientExtractReason = "llm_failed_fallback";
+        ingredientExtractReason = "cache_reuse";
       } else {
         const extractResult = await extractOwnedIngredientsWithReason(parsed.inputText, parsed.ownedIngredients);
         extracted = extractResult.result;
@@ -111,6 +137,9 @@ export async function POST(req: Request) {
 
     const cached = readCache(key);
     if (cached) {
+      if (!cached.recommendations.length) {
+        recommendCache.delete(key);
+      } else {
       await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, cached.recommendations);
       return NextResponse.json({
         ...cached,
@@ -120,22 +149,20 @@ export async function POST(req: Request) {
         cacheHit: true,
         cacheSource: "memory",
       });
+      }
     }
 
     const dbCached = await findCachedRecommendationByHash(requestHash);
     if (dbCached && isRecommendationArray(dbCached.recommendations)) {
-      const dbInputText = dbCached.inputText || parsed.inputText;
-      const dbOwnedIngredients = Array.isArray(dbCached.ownedIngredients)
-        ? dbCached.ownedIngredients.map((item) => String(item)).filter(Boolean)
-        : ownedIngredients;
-      const referenceSources = await retrieveHowToCookReferences({
-        inputText: dbInputText,
-        ownedIngredients: dbOwnedIngredients,
-        limit: 3,
-      });
+      if (dbCached.recommendations.length === 0) {
+        // 避免历史错误版本写入的空结果长期污染推荐。
+      } else {
       const value: RecommendWithSources = {
         recommendations: dbCached.recommendations,
-        referenceSources,
+        referenceSources: toReferenceSources(dbCached.recommendations),
+        noMatch: dbCached.recommendations.length === 0,
+        noMatchMessage: dbCached.recommendations.length === 0 ? "当前没有匹配到菜谱" : undefined,
+        recipePreviewByDishId: toRecipePreviewByDishId(dbCached.recommendations),
       };
       writeCache(key, value);
       await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, value.recommendations);
@@ -147,9 +174,20 @@ export async function POST(req: Request) {
         cacheHit: true,
         cacheSource: "database",
       });
+      }
     }
 
     const response = await generateRecommendations(parsed.inputText, ownedIngredients);
+    if (response.transientFailure) {
+      return NextResponse.json(
+        {
+          error: response.noMatchMessage || "推荐服务暂时不可用，请重试",
+          retryable: true,
+        },
+        { status: 502 },
+      );
+    }
+
     writeCache(key, response);
 
     await persistRecommendHistory(parsed.inputText, ownedIngredients, requestHash, response.recommendations);

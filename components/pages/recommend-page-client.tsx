@@ -12,6 +12,8 @@ type RecommendApiResponse = RecommendResponse & {
   normalizedOwnedIngredients?: string[];
   ingredientExtractSource?: IngredientExtractSource;
   ingredientExtractReason?: IngredientExtractReason;
+  noMatch?: boolean;
+  noMatchMessage?: string;
 };
 
 async function fetchRecommendations(inputText: string, ownedIngredients: string[]): Promise<RecommendApiResponse> {
@@ -68,7 +70,12 @@ export function RecommendPageClient() {
         <p className="text-sm text-[color:var(--muted)]">已有食材：{effectiveOwned.join("、") || "未识别"}</p>
         {query.data?.ingredientExtractSource ? (
           <p className="mt-1 text-xs text-[color:var(--muted)]">
-            识别来源：{query.data.ingredientExtractSource === "llm" ? "DeepSeek 语义抽取" : "规则兜底抽取"}
+            识别来源：
+            {query.data.ingredientExtractReason === "cache_reuse"
+              ? "缓存复用"
+              : query.data.ingredientExtractSource === "llm"
+                ? "DeepSeek 语义抽取"
+                : "规则兜底抽取"}
           </p>
         ) : null}
       </section>
@@ -92,6 +99,12 @@ export function RecommendPageClient() {
 
       {query.data ? (
         <>
+          {(query.data.noMatch || !query.data.recommendations.length) && !query.isError ? (
+            <section className="glass-card mb-5 rounded-2xl p-5 text-sm text-[color:var(--muted)]">
+              {query.data.noMatchMessage || "当前没有匹配到菜谱"}
+            </section>
+          ) : null}
+
           {grouped?.easy.length ? (
             <section className="mb-5">
               <h2 className="mb-3 text-lg font-semibold text-[color:var(--royal-red)]">简 · 快手御膳</h2>

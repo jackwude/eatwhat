@@ -25,7 +25,7 @@ function stripMarkdown(md) {
 
 function extractSection(md, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`##\\s+${escaped}\\n([\\s\\S]*?)(?:\\n##\\s+|$)`, 'm');
+  const re = new RegExp(`^\\s*#{1,6}\\s*${escaped}\\s*$\\n?([\\s\\S]*?)(?=^\\s*#{1,6}\\s+|$)`, 'm');
   const match = md.match(re);
   return match ? match[1].trim() : '';
 }
@@ -35,8 +35,8 @@ function extractIngredients(md) {
   return sec
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.startsWith('*'))
-    .map((line) => line.replace(/^\*\s*/, '').split(/[（(]/)[0].trim())
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s*/, '').replace(/^\d+\.\s*/, '').split(/[（(]/)[0].trim())
     .filter(Boolean)
     .slice(0, 10);
 }
@@ -46,10 +46,10 @@ function extractOperations(md) {
   return sec
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.startsWith('*'))
-    .map((line) => line.replace(/^\*\s*/, '').trim())
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s*/, '').replace(/^\d+\.\s*/, '').trim())
     .filter(Boolean)
-    .slice(0, 4);
+    .slice(0, 12);
 }
 
 async function listMarkdownFiles(root) {

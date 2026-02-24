@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorState } from "@/components/common/error-state";
@@ -23,22 +24,41 @@ type RecipeApiResponse = RecipeResponse & {
   referenceSources?: ReferenceSource[];
   sourceType?: "howtocook" | "web" | "fallback" | "llm";
   webReferences?: Array<{ title: string; url: string; snippet: string }>;
-  cacheSource?: "memory" | "database" | "llm";
+  cacheSource?: "memory" | "database" | "llm" | "recommend_snapshot" | "llm_fill";
+  detailMode?: "full" | "preview_only";
+  fillStatus?: "skipped" | "filled" | "failed";
+  retryable?: boolean;
 };
 
 const PLACEHOLDER_IMAGE_URL = "/placeholder-dish.svg";
 
+function isLocalRuntimeHost(hostname: string): boolean {
+  if (!hostname) return true;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
+  if (hostname.endsWith(".local")) return true;
+  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true;
+  const m = hostname.match(/^172\.(\d+)\.\d+\.\d+$/);
+  if (m) {
+    const second = Number(m[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
 async function fetchRecipe(
   routeId: string,
   dishName: string,
+  inputText: string,
   ownedIngredients: string[],
   sourceHintPath?: string,
   sourceHintType?: "howtocook" | "llm",
+  forceFullDetail?: boolean,
 ): Promise<RecipeApiResponse> {
   const res = await fetch(`/api/recipe/${routeId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dishName, ownedIngredients, sourceHintPath, sourceHintType }),
+    body: JSON.stringify({ dishId: routeId, dishName, inputText, ownedIngredients, sourceHintPath, sourceHintType, forceFullDetail }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "菜谱生成失败");
@@ -57,18 +77,29 @@ export function RecipePageClient() {
     .filter(Boolean);
   const sourceHintPath = searchParams.get("sourceHintPath") || undefined;
   const sourceHintType = (searchParams.get("sourceHintType") as "howtocook" | "llm" | null) || undefined;
+  const [forceFullDetail, setForceFullDetail] = useState(false);
   const recommendBackHref = `/recommend?${new URLSearchParams({
     q: q || `我有${owned.join("、")}`,
     owned: owned.join(","),
   }).toString()}`;
 
   const recipeQuery = useQuery({
-    queryKey: ["recipe", params.id, dishName, owned.join("|"), sourceHintPath || "", sourceHintType || ""],
-    queryFn: () => fetchRecipe(params.id, dishName, owned, sourceHintPath, sourceHintType),
+    queryKey: ["recipe", params.id, dishName, q, owned.join("|"), sourceHintPath || "", sourceHintType || "", forceFullDetail ? "force" : "normal"],
+    queryFn: () => fetchRecipe(params.id, dishName, q || `我有${owned.join("、")}`, owned, sourceHintPath, sourceHintType, forceFullDetail),
     enabled: Boolean(dishName && params.id),
     staleTime: 1000 * 60 * 5,
     retry: 0,
   });
+
+  const imageFeatureOverride = process.env.NEXT_PUBLIC_ENABLE_IMAGE_GEN;
+  const imageFeatureEnabled =
+    imageFeatureOverride === "true"
+      ? true
+      : imageFeatureOverride === "false"
+        ? false
+        : typeof window !== "undefined"
+          ? !isLocalRuntimeHost(window.location.hostname)
+          : false;
 
   const imageQuery = useQuery({
     queryKey: ["dish-image", dishName],
@@ -87,7 +118,7 @@ export function RecipePageClient() {
       }
       return data.imageUrl as string;
     },
-    enabled: Boolean(recipeQuery.data && dishName),
+    enabled: Boolean(recipeQuery.data && dishName && imageFeatureEnabled),
     retry: 0,
     staleTime: 1000 * 60 * 60,
   });
@@ -116,8 +147,13 @@ export function RecipePageClient() {
         <ErrorState
           title="菜谱生成失败"
           description={(recipeQuery.error as Error).message}
-          actionLabel="重试"
-          onAction={() => recipeQuery.refetch()}
+          actionLabel={sourceHintType === "llm" ? "重试获取完整详情" : "重试"}
+          onAction={() => {
+            if (sourceHintType === "llm") {
+              setForceFullDetail(true);
+            }
+            recipeQuery.refetch();
+          }}
         />
       ) : null}
 
@@ -137,9 +173,6 @@ export function RecipePageClient() {
                 ) : null}
               </div>
             </div>
-            <p className="border-t border-[#d9be86] px-4 py-2 text-xs text-[color:var(--muted)]">
-              {imageQuery.isLoading ? "正在生成菜品预览图..." : imageQuery.isError ? "预览图生成失败，已使用占位图。" : "AI 生成菜品预览图"}
-            </p>
           </article>
 
           <article className="glass-card rounded-2xl px-4 py-3 text-xs text-[color:var(--muted)] sm:text-sm">
@@ -151,9 +184,29 @@ export function RecipePageClient() {
           <ShoppingList required={recipeQuery.data.requiredIngredients} missing={recipeQuery.data.missingIngredients} />
 
           <article className="glass-card rounded-2xl p-5 sm:p-6">
-            <h2 className="text-xl font-semibold">御膳工序</h2>
-            <RoyalDivider label="壹贰叁" />
-            <RecipeStepList steps={recipeQuery.data.steps} />
+            <RoyalDivider label="御膳工序" labelClassName="text-base sm:text-lg tracking-[0.08em]" />
+            {recipeQuery.data.detailMode === "preview_only" || !recipeQuery.data.steps.length ? (
+              <div className="mt-4 rounded-xl border border-[#dcc18d] bg-[#fff8ea] p-4 text-sm text-[color:var(--muted)]">
+                暂无完整工序，当前已展示推荐概要。可点击“重试获取完整详情”尝试补全。
+              </div>
+            ) : (
+              <RecipeStepList steps={recipeQuery.data.steps} />
+            )}
+            {sourceHintType === "llm" && (recipeQuery.data.detailMode === "preview_only" || !recipeQuery.data.steps.length) ? (
+              <button
+                type="button"
+                className="royal-link mt-3 text-sm font-semibold"
+                onClick={() => {
+                  setForceFullDetail(true);
+                  recipeQuery.refetch();
+                }}
+              >
+                重试获取完整详情
+              </button>
+            ) : null}
+            {recipeQuery.data.sourceType ? (
+              <p className="mt-4 text-xs text-[color:var(--muted)]">来源：{sourceTypeLabel[recipeQuery.data.sourceType]}</p>
+            ) : null}
           </article>
 
           <article className="glass-card rounded-2xl p-5 sm:p-6">
