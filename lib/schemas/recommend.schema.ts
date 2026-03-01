@@ -10,6 +10,14 @@ export const recommendationSchema = z.object({
   name: z.string().min(1),
   reason: z.string().min(1),
   requiredIngredients: z.array(ingredientItemSchema).min(1),
+  steps: z
+    .array(
+      z.object({
+        stepNo: z.number().int().positive(),
+        instruction: z.string().min(1),
+      }),
+    )
+    .optional(),
   estimatedTimeMin: z.number().int().positive(),
   difficulty: z.enum(["easy", "medium", "hard"]),
   sourceType: z.enum(["howtocook", "llm", "web", "fallback"]).optional(),
@@ -44,7 +52,7 @@ export const recommendationSchema = z.object({
 });
 
 export const recommendResponseSchema = z.object({
-  recommendations: z.array(recommendationSchema).min(0).max(9),
+  recommendations: z.array(recommendationSchema).min(0).max(3),
   noMatch: z.boolean().optional(),
   noMatchMessage: z.string().min(1).optional(),
   recipePreviewByDishId: z.record(z.string(), recommendationSchema.shape.recipePreview).optional(),
@@ -53,8 +61,15 @@ export const recommendResponseSchema = z.object({
 export const recommendRequestSchema = z.object({
   inputText: z.string().min(1),
   ownedIngredients: z.array(z.string().min(1)).default([]),
+  thinkingEnabled: z.boolean().default(false),
 });
 
 export type RecommendResponse = z.infer<typeof recommendResponseSchema>;
-export type IngredientExtractSource = "llm" | "fallback_rule";
-export type IngredientExtractReason = "llm_success" | "breaker_open" | "llm_failed_fallback" | "cache_reuse";
+export type IngredientExtractSource = "llm" | "fallback_rule" | "input_direct";
+export type IngredientExtractReason =
+  | "llm_success"
+  | "breaker_open"
+  | "llm_failed_fallback"
+  | "cache_reuse"
+  | "llm_single_pass"
+  | "input_direct_parse";

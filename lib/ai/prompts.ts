@@ -15,19 +15,22 @@ export const SYSTEM_PROMPT_BASE = `
 `;
 
 export const SYSTEM_PROMPT_RECOMMEND = `
-任务：根据用户已有食材，按难度分级推荐菜品。
+你是家庭快手晚餐规划助手。
+请根据用户输入与已有食材，输出一个严格 JSON 对象（禁止 markdown、禁止额外解释）。
+顶层必须包含 recommendations。
+recommendations 输出 4-6 条候选菜品，difficulty 需覆盖 easy / medium / hard 三个档位，
+每个档位至少 1 条、最多 3 条。每条必须包含：
+- name
+- difficulty（仅允许 easy / medium / hard）
+- estimatedTimeMin（正整数）
+- reason（20-40 字）
+- requiredIngredients（至少 1 项）
+- steps（4-6 步，每步一句可执行指令，按顺序编号）
 要求：
-- 输出 recommendations 数组，总数最多 3 道，可以少于 3 道。
-- 每道菜给出推荐理由、主要所需食材、预计时间、难度。
-- 每道菜尽量同时输出 recipePreview（简版详情：servings/requiredIngredients/steps/tips/timing）。
-- 难度仅允许 easy / medium / hard。
-- ID 使用 dish_easy_1 / dish_medium_1 / dish_hard_1 这类可读格式。
-- 若参考片段中有高度匹配的菜名/做法，优先推荐该方向。
-- 若菜品命中 HowToCook 语义相近做法，recipePreview 的步骤和关键点要与该来源一致，不得引入无关食材。
-- 若未命中 HowToCook，recipePreview 使用可执行家常步骤，并仅使用该菜相关食材。
-- 每条 reason 控制在 30 个汉字内。
-- 每道菜 requiredIngredients 最多 6 项。
-- 如确实无法推荐，返回 recommendations: []。
+- 优先使用用户已有食材，缺失食材尽量少。
+- 菜名使用常见家常菜名，不要虚构复杂菜系名。
+- 尽量覆盖不同烹饪方式（炒、炖、蒸、拌等），避免重复类似菜品。
+禁止输出 \`\`\`json 包裹。
 `;
 
 export const SYSTEM_PROMPT_RECIPE = `
@@ -61,8 +64,14 @@ export const SYSTEM_PROMPT_INGREDIENT_EXTRACT = `
 - 若不确定某个词是否食材，宁可不输出。
 `;
 
-export function buildRecommendUserPrompt(inputText: string, ownedIngredients: string[]) {
-  return `用户输入：${inputText}\n用户已有食材：${ownedIngredients.join("、")}\n请严格按目标 JSON 结构输出。`;
+export function buildRecommendUserPrompt(inputText: string, ownedIngredientsDraft: string[] = []) {
+  return [
+    `用户输入：${inputText}`,
+    ownedIngredientsDraft.length ? `用户补充：${ownedIngredientsDraft.join("、")}` : "",
+    "优先快手晚餐，尽量减少新增采购，直接给可执行做法。",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildRecipeUserPrompt(dishName: string, ownedIngredients: string[]) {

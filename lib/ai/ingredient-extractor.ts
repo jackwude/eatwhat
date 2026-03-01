@@ -2,6 +2,7 @@ import { z } from "zod";
 import { callJsonModel } from "@/lib/ai/client";
 import { buildIngredientExtractPrompt, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_INGREDIENT_EXTRACT } from "@/lib/ai/prompts";
 import { normalizeIngredientList } from "@/lib/parser/ingredient-normalizer";
+import { getEnv } from "@/lib/utils/env";
 
 const extractResponseSchema = z.object({
   ingredients: z.array(z.string().min(1)).max(20),
@@ -111,7 +112,7 @@ export async function extractOwnedIngredientsWithReason(
       user: buildIngredientExtractPrompt(inputText, rawCandidates),
       responseTemplate: template,
       retries: 0,
-      model: "deepseek-v3-2-251201",
+      model: getEnv().OPENAI_MODEL,
     });
 
     const parsed = extractResponseSchema.parse(raw);
